@@ -270,6 +270,55 @@ header p {
     font-weight: 600;
 }
 
+.weak-keys-panel {
+    background: rgba(0,0,0,0.1);
+    padding: 1rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+[data-theme="light"] .weak-keys-panel {
+    background: rgba(0,0,0,0.03);
+}
+
+.weak-keys-title {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.weak-keys-list {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.weak-key-item {
+    background: var(--incorrect-bg);
+    color: var(--incorrect-color);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.875rem;
+    background-color: transparent;
+    border: 1px solid var(--text-secondary);
+    color: var(--text-secondary);
+}
+
+.btn-small:hover {
+    background-color: rgba(255,255,255,0.1);
+}
+
 /* Mobile responsiveness */
 @media (max-width: 600px) {
     .container {
