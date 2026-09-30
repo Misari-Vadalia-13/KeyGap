@@ -44,10 +44,18 @@ const modeSelect = document.getElementById('mode-select');
 const diffSelect = document.getElementById('diff-select');
 const themeToggle = document.getElementById('theme-toggle');
 const soundToggle = document.getElementById('sound-toggle');
+const usernameInput = document.getElementById('username-input');
 
 const weakKeysPanel = document.getElementById('weak-keys-panel');
 const weakKeysList = document.getElementById('weak-keys-list');
 const resetStatsBtn = document.getElementById('reset-stats-btn');
+
+const refreshLbBtn = document.getElementById('refresh-lb-btn');
+const leaderboardList = document.getElementById('leaderboard-list');
+
+// API endpoint (Change this when deploying separate backend)
+// For GitHub pages without backend, it gracefully falls back
+const API_URL = "backend"; 
 
 let currentText = "";
 let characters = [];
@@ -64,26 +72,33 @@ let soundEnabled = true;
 let keyStats = JSON.parse(localStorage.getItem('keygap-stats')) || {};
 let lastKeyTime = null;
 
+let currentRoundId = null;
+let keystrokeLog = [];
+
 let AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 
-// Initialize theme
+// Initialize preferences
 const savedTheme = localStorage.getItem('keygap-theme') || 'dark';
 document.body.setAttribute('data-theme', savedTheme);
 updateThemeIcon();
 
-// Initialize sound
 const savedSound = localStorage.getItem('keygap-sound');
 if (savedSound === 'off') {
     soundEnabled = false;
 }
 updateSoundIcon();
 
-// Initialize Personal Best
 let personalBest = localStorage.getItem('keygap-pb') || 0;
 pbValue.innerText = `${personalBest} WPM`;
+usernameInput.value = localStorage.getItem('keygap-username') || "";
 
 updateWeakKeysDisplay();
+loadLeaderboard();
+
+usernameInput.addEventListener('input', () => {
+    localStorage.setItem('keygap-username', usernameInput.value);
+});
 
 function playErrorSound() {
     if (!soundEnabled) return;
@@ -117,7 +132,7 @@ function getWeakKeys() {
     for (const [key, stats] of Object.entries(keyStats)) {
         if (stats.attempts >= 20) {
             const errorRate = stats.misses / stats.attempts;
-            if (errorRate > 0.05) { // Threshold for considering it "weak" (e.g. >5% error)
+            if (errorRate > 0.05) {
                 weakKeys.push({ key, errorRate });
             }
         }
@@ -127,7 +142,7 @@ function getWeakKeys() {
 }
 
 function updateWeakKeysDisplay() {
-    const weakKeys = getWeakKeys().slice(0, 5); // top 5
+    const weakKeys = getWeakKeys().slice(0, 5); 
     
     if (weakKeys.length > 0) {
         weakKeysPanel.style.display = 'flex';
@@ -143,17 +158,30 @@ function updateWeakKeysDisplay() {
     }
 }
 
-function getRandomText() {
-    const diff = diffSelect.value;
+async function fetchServerText() {
+    try {
+        const res = await fetch(`${API_URL}/start_round.php`);
+        if (res.ok) {
+            const data = await res.json();
+            currentRoundId = data.round_id;
+            return data.text;
+        }
+    } catch (err) {
+        // Fallback to local if backend is not available (e.g. static host)
+    }
+    currentRoundId = null;
+    return null;
+}
+
+function getLocalTargetedText(diff) {
     const weakKeys = getWeakKeys().map(w => w.key);
     
-    // Weighted practice: 30-40% targeted words if we have weak keys
     if (weakKeys.length > 0 && Math.random() < 0.6) {
         let generatedWords = [];
         const length = diff === 'easy' ? 6 : diff === 'medium' ? 10 : 12;
         
         for (let i = 0; i < length; i++) {
-            if (i % 3 === 0) { // ~33% targeted words
+            if (i % 3 === 0) {
                 const targetKey = weakKeys[Math.floor(Math.random() * weakKeys.length)];
                 const matchingWords = commonWords.filter(w => w.includes(targetKey));
                 if (matchingWords.length > 0) {
@@ -180,7 +208,7 @@ function getRandomText() {
 }
 
 function appendMoreText() {
-    const extraText = " " + getRandomText();
+    const extraText = " " + getLocalTargetedText(diffSelect.value);
     currentText += extraText;
     
     for (let i = 0; i < extraText.length; i++) {
@@ -191,7 +219,7 @@ function appendMoreText() {
     }
 }
 
-function initRound() {
+async function initRound() {
     is60sMode = modeSelect.value === '60s';
     
     // Reset state
@@ -202,6 +230,8 @@ function initRound() {
     startTime = null;
     timeLeft = 60;
     lastKeyTime = null;
+    keystrokeLog = [];
+    currentRoundId = null;
     
     if (timer) {
         clearInterval(timer);
@@ -212,7 +242,21 @@ function initRound() {
     wpmEl.innerText = "0";
     accuracyEl.innerText = "100%";
     
-    currentText = getRandomText();
+    // Disable interactions while loading
+    typingArea.innerHTML = "<span style='color:var(--text-secondary);'>Loading...</span>";
+    document.removeEventListener('keydown', handleKeyDown);
+    
+    // Try to get server text if not in 60s mode or targeted mode
+    // (60s mode requires infinite refill, so backend validation is complex. We skip server for 60s mode)
+    let text = null;
+    if (!is60sMode) {
+        text = await fetchServerText();
+    }
+    
+    if (!text) {
+        text = getLocalTargetedText(diffSelect.value);
+    }
+    currentText = text;
     
     typingArea.innerHTML = "";
     characters = currentText.split('').map((char, index) => {
@@ -252,6 +296,11 @@ function handleKeyDown(e) {
         if (soundEnabled && !audioCtx) {
             audioCtx = new AudioContext();
         }
+    }
+    
+    // Log keystroke for server validation
+    if (isPlaying) {
+        keystrokeLog.push({ key: e.key, time: Date.now() });
     }
     
     if (e.key === 'Backspace') {
@@ -376,6 +425,57 @@ function endRound() {
     // Save key stats
     localStorage.setItem('keygap-stats', JSON.stringify(keyStats));
     updateWeakKeysDisplay();
+    
+    // Submit score if we have a valid round from server
+    if (currentRoundId) {
+        submitScoreToServer();
+    }
+}
+
+async function submitScoreToServer() {
+    try {
+        const res = await fetch(`${API_URL}/submit_score.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                round_id: currentRoundId,
+                username: usernameInput.value || "Anonymous",
+                log: keystrokeLog
+            })
+        });
+        if (res.ok) {
+            loadLeaderboard();
+        }
+    } catch (err) {
+        console.warn("Failed to submit score, backend might not be available.");
+    }
+}
+
+async function loadLeaderboard() {
+    try {
+        const res = await fetch(`${API_URL}/leaderboard.php`);
+        if (res.ok) {
+            const scores = await res.json();
+            if (scores.length === 0) {
+                leaderboardList.innerHTML = "<div class='lb-msg'>No scores yet!</div>";
+                return;
+            }
+            
+            leaderboardList.innerHTML = "";
+            scores.forEach((s, i) => {
+                const div = document.createElement('div');
+                div.className = 'lb-entry';
+                div.innerHTML = `
+                    <div class="lb-rank">#${i+1}</div>
+                    <div class="lb-name">${s.username}</div>
+                    <div class="lb-score">${s.wpm} WPM <span style="font-size:0.8em;color:var(--text-secondary)">(${s.accuracy}%)</span></div>
+                `;
+                leaderboardList.appendChild(div);
+            });
+        }
+    } catch (err) {
+        leaderboardList.innerHTML = "<div class='lb-msg'>Leaderboard unavailable (no backend)</div>";
+    }
 }
 
 function restartRound() {
@@ -392,6 +492,10 @@ resetStatsBtn.addEventListener('click', () => {
     localStorage.removeItem('keygap-stats');
     updateWeakKeysDisplay();
     resetStatsBtn.blur();
+});
+
+refreshLbBtn.addEventListener('click', () => {
+    loadLeaderboard();
 });
 
 modeSelect.addEventListener('change', () => {

@@ -11,6 +11,7 @@
     --panel-bg: #1e293b;
     --input-bg: #0f172a;
     --input-border: #334155;
+    --lb-bg: rgba(0,0,0,0.2);
 }
 
 [data-theme="light"] {
@@ -25,6 +26,7 @@
     --panel-bg: #ffffff;
     --input-bg: #f8fafc;
     --input-border: #cbd5e1;
+    --lb-bg: rgba(0,0,0,0.05);
 }
 
 * {
@@ -43,6 +45,7 @@ body {
     min-height: 100vh;
     line-height: 1.6;
     transition: background-color 0.3s ease, color 0.3s ease;
+    padding: 2rem 1rem;
 }
 
 .container {
@@ -116,6 +119,11 @@ header p {
     outline: none;
     cursor: pointer;
     transition: background-color 0.3s, border-color 0.3s;
+}
+
+input.select-css {
+    cursor: text;
+    width: 120px;
 }
 
 .select-css:focus {
@@ -317,6 +325,60 @@ header p {
 
 .btn-small:hover {
     background-color: rgba(255,255,255,0.1);
+}
+
+/* Leaderboard */
+.leaderboard-panel {
+    margin-top: 1rem;
+    background: var(--lb-bg);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--input-border);
+}
+
+.leaderboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.leaderboard-header h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.lb-entry {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--input-border);
+}
+
+.lb-entry:last-child {
+    border-bottom: none;
+}
+
+.lb-rank {
+    width: 30px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.lb-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.lb-score {
+    font-weight: 600;
+    color: var(--accent-color);
+}
+
+.lb-msg {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 1rem 0;
 }
 
 /* Mobile responsiveness */

@@ -17,6 +17,10 @@
 
         <div class="settings-bar">
             <div class="setting-group">
+                <label for="username-input">Name:</label>
+                <input type="text" id="username-input" class="select-css" placeholder="Anonymous" maxlength="20">
+            </div>
+            <div class="setting-group">
                 <label for="mode-select">Mode:</label>
                 <select id="mode-select" class="select-css">
                     <option value="normal">Normal</option>
@@ -67,6 +71,16 @@
             <div class="personal-best">
                 <span class="pb-label">Personal Best (this device):</span>
                 <span class="pb-value" id="personal-best">0 WPM</span>
+            </div>
+        </div>
+
+        <div class="leaderboard-panel" id="leaderboard-panel">
+            <div class="leaderboard-header">
+                <h2>🏆 Top 10 Leaderboard</h2>
+                <button id="refresh-lb-btn" class="icon-btn" title="Refresh">🔄</button>
+            </div>
+            <div id="leaderboard-list">
+                <div class="lb-msg">Loading...</div>
             </div>
         </div>
     </div>
