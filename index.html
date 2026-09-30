@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KeyGap - Typing Trainer</title>
+    <meta name="description" content="KeyGap is a typing trainer that finds the keys you fumble and drills them.">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>KeyGap</h1>
+            <p>Master your keystrokes.</p>
+        </header>
+
+        <div class="stats-panel">
+            <div class="stat">
+                <span class="label">Time</span>
+                <span class="value" id="time">0s</span>
+            </div>
+            <div class="stat">
+                <span class="label">WPM</span>
+                <span class="value" id="wpm">0</span>
+            </div>
+            <div class="stat">
+                <span class="label">Accuracy</span>
+                <span class="value" id="accuracy">100%</span>
+            </div>
+        </div>
+
+        <div class="typing-area" id="typing-area" tabindex="0">
+            <!-- Text spans will be injected here -->
+        </div>
+
+        <div class="controls">
+            <button id="restart-btn" class="btn">Restart (Tab)</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
