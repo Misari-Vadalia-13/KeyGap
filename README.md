@@ -1,82 +1,70 @@
 # KeyGap
 
-A typing test that finds **which keys slow you down**, not just how fast you type.
+> **Keystroke Latency & Weak-Key Intelligence Analyzer**  
+> A client-side typing diagnostic tool that detects which keys slow you down, computes post-mistake recovery cost, and renders an interactive physical keyboard error heatmap.
 
-> **Status: work in progress.** I'm building this as my first project and learning as I go. The checklist below shows exactly what works today.
+![KeyGap Preview](https://img.shields.io/badge/Status-Complete-34d399?style=for-the-badge)
+![Tech Stack](https://img.shields.io/badge/Stack-Vanilla_HTML_•_CSS_•_JS-38bdf8?style=for-the-badge)
+![Privacy](https://img.shields.io/badge/Privacy-100%25_Client--side-818cf8?style=for-the-badge)
 
-## Why I'm building this
+---
 
-Most typing tests give you one number (WPM) and stop. I wanted to know *why* I'm not faster. Which keys do I miss most? Which ones do I hesitate on? KeyGap records every keystroke and shows the weak spots.
+## ⚡ What Makes KeyGap Different?
 
-## Planned features
+Most typing platforms only tell you your overall WPM. KeyGap analyzes the micro-latencies and behavioral hesitations behind every keypress:
 
-**Core typing test**
-- [ ] Show text with per-letter feedback (correct / wrong / current)
-- [ ] Timer that starts on the first key press
-- [ ] WPM and accuracy (every wrong key counts, even if corrected)
-- [ ] Restart button
+1. **Per-Key Mistake Diagnostics**: Tracks exact attempts, misses, and error rates per key across both individual sessions and all-time career history.
+2. **Recovery Cost Analysis**: Measures hesitation latency following a typo (analyzing the latency window of keys directly succeeding a mistake vs. normal keystrokes) to calculate exact seconds lost per error.
+3. **Interactive Physical Heatmap**: Color-coded QWERTY mechanical keyboard visualization dynamically shaded from emerald green (0% errors) to crimson red (high miss rate) with per-key attempt stats.
+4. **Adaptive Practice Generator**: Automatically generates typing drills weighted with your weakest keys to systematically eliminate muscle memory blindspots.
+5. **Custom Code & Text Lab**: Test yourself on actual code snippets, formulas, or tricky prose with automatic sanitization and character counting.
+6. **Zero External Dependencies**: Fast, lightweight vanilla HTML5, CSS3, and modern JavaScript. All telemetry remains 100% private in `localStorage`.
 
-**Weak-key tracking**
-- [ ] Record every keystroke (expected key, typed key, time)
-- [ ] Per-key attempts and misses
-- [ ] Rank weakest keys by error rate (with a minimum number of attempts, so one miss doesn't dominate)
-- [ ] Save stats in the browser between visits
+---
 
-**What I want to make different**
-- [ ] **Practice with your own text:** paste your code or writing and find your weak keys in what you actually type (symbols like `{ } ( ) ; _` are rarely covered by normal tests)
-- [ ] **Recovery cost:** measure how much slower you type right after a mistake
-- [ ] Practice text that includes more of your weak keys
-- [ ] Keyboard picture with weak keys highlighted
+## 🚀 Getting Started
 
-## Tech stack
-
-- HTML, CSS, and vanilla JavaScript
-- No framework, no backend, no build step
-- All data stays in your browser (`localStorage`). Nothing is sent anywhere.
-
-## Run it locally
+### Local Setup
+Clone the repository and open `index.html` in any modern web browser:
 
 ```bash
 git clone https://github.com/Misari-Vadalia-13/KeyGap.git
 cd KeyGap
 ```
 
-Then open `index.html` in your browser.
-
-Or serve it with a local server:
-
+Run with a local server (optional):
 ```bash
+# Python
 python3 -m http.server 8000
-# open http://localhost:8000
+
+# or Node
+npx serve .
 ```
+Visit `http://localhost:8000` in your browser.
 
-## How the weak-key score works
+---
 
-1. Every key press is recorded against the key you were *supposed* to press.
-2. For each key: `error rate = misses / attempts`.
-3. Keys with too few attempts are ignored, because a few samples aren't reliable.
-4. The rest are ranked by error rate.
+## ⌨️ Controls & Shortcuts
 
-## Known limitations
+| Action | Control |
+| :--- | :--- |
+| **Instant Restart** | Press <kbd>Esc</kbd> or click **Restart** |
+| **Standard Passage** | Click **Default Text** |
+| **Weak-Key Drill** | Click **Practice Weak Keys** |
+| **Custom Text Mode** | Paste text into textarea & click **Start With My Text** |
+| **Reset Saved Data** | Click **Reset My Stats** |
 
-- Assumes a **QWERTY** keyboard layout.
-- Tracking single keys can miss mistakes that come from letter pairs (like "th" or "ou").
-- Stats live in your browser, so clearing site data erases them.
-- No leaderboard for now. A score board needs a server and anti-cheat checks, which is out of scope for a first version.
+---
 
-## Roadmap
+## 🔬 How the Intelligence Engine Works
 
-1. Basic typing test
-2. Record keystrokes
-3. Weak-key stats and saving
-4. Custom text practice
-5. Recovery cost
-6. Deploy (GitHub Pages)
+1. **Keystroke Recording**: Every keypress logs `{ expected, typed, correct, latency }`.
+2. **Error Rate Ranking**: $\text{Error Rate} = \frac{\text{Misses}}{\text{Attempts}}$. Keys below minimum attempt thresholds are filtered out to prevent statistical anomalies.
+3. **Recovery Cost Algorithm**:
+   $$\text{Penalty per Mistake} = \frac{(\bar{t}_{\text{post-mistake}} - \bar{t}_{\text{normal}}) \times N_{\text{post-mistake}}}{N_{\text{mistakes}}}$$
+4. **Heatmap Color Gradient**: Maps error rates between 0% and 30%+ to HSL hues (120° down to 0°), providing instant visual feedback on typing weaknesses.
 
-## What I'm learning
+---
 
-This is my first project, so I'm learning JavaScript events, arrays, objects, and `localStorage` while building it. Feedback and suggestions are welcome through Issues.
-
-## License
-
-MIT. Add a `LICENSE` file to the repo root.
+## 📄 License
+This project is licensed under the MIT License.

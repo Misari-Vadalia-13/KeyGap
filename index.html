@@ -4,48 +4,219 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KeyGap</title>
+    <title>KeyGap • Keystroke Latency & Weak-Key Intelligence</title>
+    <meta name="description"
+        content="KeyGap is an intelligent typing analyzer that tracks per-key error rates, recovery cost after mistakes, and provides an interactive keyboard heatmap.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><path d='M4 5a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2H4zm2 4h2v2H6V9zm4 0h2v2h-2V9zm4 0h2v2h-2V9zm4 0h2v2h-2V9zM6 13h12v2H6v-2z'/></svg>">
 </head>
 
 <body>
-    <h1>KeyGap</h1>
-    <p class="tagline">Find the keys that slow you down. Everything stays in your browser.</p>
+    <div class="ambient-glow"></div>
 
-    <!-- The test -->
-    <div id="text"></div>
-    <div id="results" class="info"></div>
-    <div id="weak" class="info"></div>
+    <header class="navbar">
+        <div class="brand">
+            <div class="logo-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <line x1="6" y1="8" x2="6" y2="8" />
+                    <line x1="10" y1="8" x2="10" y2="8" />
+                    <line x1="14" y1="8" x2="14" y2="8" />
+                    <line x1="18" y1="8" x2="18" y2="8" />
+                    <line x1="8" y1="16" x2="16" y2="16" />
+                </svg>
+            </div>
+            <div class="brand-text">
+                <span class="brand-name">KeyGap</span>
+                <span class="brand-badge">PRO DIAGNOSTICS</span>
+            </div>
+        </div>
 
-    <div class="buttons">
-        <button id="restart">Restart</button>
-        <button id="default-text">Default text</button>
-        <button id="practice">Practice my weak keys</button>
-    </div>
+        <div class="nav-actions">
+            <a href="https://github.com/Misari-Vadalia-13/KeyGap" target="_blank" rel="noopener noreferrer"
+                class="github-link" title="GitHub Repository">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                        d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+                </svg>
+                <span>GitHub</span>
+            </a>
+        </div>
+    </header>
 
-    <!-- Phase 8: your own text -->
-    <h2>Practice with your own text</h2>
-    <textarea id="custom"
-        placeholder="Paste code or writing here (only the first 300 typeable characters are used)"></textarea>
-    <div class="buttons">
-        <button id="use-custom">Start with my text</button>
-    </div>
+    <main class="main-layout">
+        <!-- Live HUD metrics ribbon -->
+        <section class="hud-panel" aria-label="Real-time Metrics">
+            <div class="hud-card">
+                <span class="hud-label">WPM</span>
+                <span class="hud-val" id="hud-wpm">0</span>
+            </div>
+            <div class="hud-card">
+                <span class="hud-label">ACCURACY</span>
+                <span class="hud-val" id="hud-acc">100<small>%</small></span>
+            </div>
+            <div class="hud-card">
+                <span class="hud-label">TIME</span>
+                <span class="hud-val" id="hud-time">0.0<small>s</small></span>
+            </div>
+            <div class="hud-card">
+                <span class="hud-label">MODE</span>
+                <span class="hud-val mode-pill" id="hud-mode">Standard</span>
+            </div>
+        </section>
 
-    <!-- Saved stats -->
-    <h2>All-time stats</h2>
-    <div id="alltime" class="info"></div>
+        <!-- Typing Arena -->
+        <section class="arena-card">
+            <div class="arena-topbar">
+                <div class="arena-indicator">
+                    <span class="status-dot"></span>
+                    <span id="arena-status">Type the passage below to start</span>
+                </div>
+                <div class="key-hint">
+                    <kbd>Esc</kbd> <span>to restart</span>
+                </div>
+            </div>
 
-    <!-- Phase 9: recovery cost -->
-    <div id="recovery" class="info"></div>
+            <!-- The active text container -->
+            <div id="text" class="typing-display" tabindex="0" role="textbox" aria-label="Typing test text"></div>
 
-    <!-- Phase 10: keyboard heatmap -->
-    <h2>Keyboard heatmap</h2>
-    <p class="legend">Green = few mistakes, red = many mistakes, gray = not enough data yet</p>
-    <div id="keyboard"></div>
+            <!-- Controls bar -->
+            <div class="controls-toolbar">
+                <button id="restart" class="btn btn-primary" title="Restart test (or press Esc)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                    <span>Restart</span>
+                </button>
+                <button id="default-text" class="btn btn-secondary">
+                    <span>Default Text</span>
+                </button>
+                <button id="practice" class="btn btn-accent" title="Generate passage from your weakest keys">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                    <span>Practice Weak Keys</span>
+                </button>
+            </div>
+        </section>
 
-    <div class="buttons">
-        <button id="reset-stats">Reset my stats</button>
-    </div>
+        <!-- Test Results Announcement Area -->
+        <div id="results" class="results-banner"></div>
+
+        <!-- Diagnostics Grid -->
+        <div class="analytics-grid">
+            <!-- Round Weak Keys -->
+            <div class="analytics-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        <h3>Current Round Weak Keys</h3>
+                    </div>
+                </div>
+                <div id="weak" class="info diagnostics-content"></div>
+            </div>
+
+            <!-- Recovery Cost Analysis -->
+            <div class="analytics-card highlight-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                        </svg>
+                        <h3>Recovery Cost (Mistake Latency)</h3>
+                    </div>
+                </div>
+                <div id="recovery" class="info diagnostics-content"></div>
+            </div>
+
+            <!-- All-Time Career Stats -->
+            <div class="analytics-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="20" x2="18" y2="10" />
+                            <line x1="12" y1="20" x2="12" y2="4" />
+                            <line x1="6" y1="20" x2="6" y2="14" />
+                        </svg>
+                        <h3>All-Time Weakest Keys</h3>
+                    </div>
+                </div>
+                <div id="alltime" class="info diagnostics-content"></div>
+            </div>
+        </div>
+
+        <!-- Interactive Keyboard Heatmap -->
+        <section class="keyboard-section">
+            <div class="section-head">
+                <div class="title-with-desc">
+                    <h2>Physical Keyboard Heatmap</h2>
+                    <p class="legend-note">Live error heatmap based on your keystroke accuracy</p>
+                </div>
+                <div class="heatmap-legend">
+                    <div class="legend-item"><span class="legend-chip chip-good"></span> Clean (0% error)</div>
+                    <div class="legend-item"><span class="legend-chip chip-mid"></span> Mild errors</div>
+                    <div class="legend-item"><span class="legend-chip chip-bad"></span> High error rate</div>
+                    <div class="legend-item"><span class="legend-chip chip-none"></span> No data yet</div>
+                </div>
+            </div>
+
+            <div class="keyboard-chassis">
+                <div id="keyboard" class="keyboard-board"></div>
+            </div>
+        </section>
+
+        <!-- Custom Text Practice Lab -->
+        <section class="custom-text-section">
+            <div class="section-head">
+                <div class="title-with-desc">
+                    <h2>Custom Passage & Code Practice</h2>
+                    <p class="legend-note">Paste code snippets, formulas, or tricky prose (up to 300 characters)</p>
+                </div>
+                <span class="char-count" id="char-counter">0 / 300</span>
+            </div>
+
+            <div class="custom-input-box">
+                <textarea id="custom"
+                    placeholder="Paste custom text or programming syntax here (e.g. const map = new Map(); func(x, y) => { return x + y; })"></textarea>
+                <div class="custom-actions">
+                    <button id="use-custom" class="btn btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                        <span>Start With My Text</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer / Reset Data -->
+        <footer class="app-footer">
+            <div class="footer-left">
+                <span>KeyGap • Real-time Typing Analytics & Heatmap Diagnostics</span>
+                <span class="footer-privacy">100% Client-side. No trackers. All data stored in your browser.</span>
+            </div>
+            <div class="footer-right">
+                <button id="reset-stats" class="btn btn-danger-outline" title="Clear all saved stats from localStorage">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>Reset My Stats</span>
+                </button>
+            </div>
+        </footer>
+    </main>
 
     <script src="script.js"></script>
 </body>

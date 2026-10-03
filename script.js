@@ -1,23 +1,23 @@
-// =====================================================
-// KeyGap - script.js  (Phases 1-10)
-// =====================================================
+// ===================================================================
+// KeyGap — script.js (Keystroke Intelligence Engine)
+// ===================================================================
 
-// ---------- Settings (values you can change) ----------
+// ---------- Settings ----------
 const DEFAULT_SENTENCE = "the quick brown fox jumps over the lazy dog";
-const MAX_LENGTH = 300;          // longest custom text we use
+const MAX_LENGTH = 300;          // longest custom text we accept
 const MIN_CUSTOM_LENGTH = 5;     // shortest custom text we accept
 const MIN_ROUND = 2;             // tries a key needs to be ranked in one round
 const MIN_ALL_TIME = 10;         // tries a key needs to be ranked in all-time stats
 const MIN_PRACTICE = 3;          // tries a key needs to be used for practice text
 const MIN_HEAT = 3;              // tries a key needs to get a color on the keyboard
 const RECOVERY_WINDOW = 3;       // how many keys after a mistake we look at
-const MAX_LATENCY = 2000;        // ignore gaps longer than this (ms), you looked away
+const MAX_LATENCY = 2000;        // ignore pauses longer than this (ms)
 const MIN_MISTAKES = 10;         // mistakes needed before showing recovery cost
 
 const STORAGE_KEY = "keygap-stats";
 const RECOVERY_KEY = "keygap-recovery";
 
-// Words used to build practice text
+// Curated words used to build dynamic weak-key practice drills
 const WORDS = [
     "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog",
     "about", "after", "again", "always", "because", "before", "between",
@@ -36,10 +36,10 @@ const WORDS = [
     "danger", "freedom", "gravity", "helmet", "kingdom", "ladder", "mirror"
 ];
 
-// Keyboard rows for the heatmap (QWERTY)
+// Standard QWERTY physical keyboard rows
 const KEY_ROWS = ["1234567890-=", "qwertyuiop[]", "asdfghjkl;'", "zxcvbnm,./"];
 
-// ---------- Page elements ----------
+// ---------- Page DOM Elements ----------
 const textbox = document.getElementById("text");
 const results = document.getElementById("results");
 const weakBox = document.getElementById("weak");
@@ -47,30 +47,46 @@ const allTimeBox = document.getElementById("alltime");
 const recoveryBox = document.getElementById("recovery");
 const keyboardBox = document.getElementById("keyboard");
 const customBox = document.getElementById("custom");
+const charCounter = document.getElementById("char-counter");
 
+// Live HUD Elements
+const hudWpm = document.getElementById("hud-wpm");
+const hudAcc = document.getElementById("hud-acc");
+const hudTime = document.getElementById("hud-time");
+const hudMode = document.getElementById("hud-mode");
+const arenaStatus = document.getElementById("arena-status");
+
+// Buttons
 const restartBtn = document.getElementById("restart");
 const defaultBtn = document.getElementById("default-text");
 const practiceBtn = document.getElementById("practice");
 const useCustomBtn = document.getElementById("use-custom");
 const resetBtn = document.getElementById("reset-stats");
 
-// ---------- State (values that change while you type) ----------
+// ---------- State ----------
 let sentence = DEFAULT_SENTENCE;
+let currentModeName = "Standard";
 let letters;
 let currentIndex;
-let startTime;
-let totalPresses;
-let wrongPresses;
-let records;
-let lastKeyTime;
+let startTime = null;
+let totalPresses = 0;
+let wrongPresses = 0;
+let records = [];
+let lastKeyTime = null;
+let liveInterval = null;
 
 // =====================================================
 // Setting up a test
 // =====================================================
 function startTest() {
+    if (liveInterval) {
+        clearInterval(liveInterval);
+        liveInterval = null;
+    }
+
     textbox.innerHTML = "";
-    results.textContent = "";
-    weakBox.textContent = "";
+    results.innerHTML = "";
+    weakBox.innerHTML = "<span style='color:var(--text-muted);'>Complete a test round to view your weakest keys for this session.</span>";
 
     for (let i = 0; i < sentence.length; i++) {
         const letter = document.createElement("span");
@@ -85,12 +101,38 @@ function startTest() {
     wrongPresses = 0;
     records = [];
     lastKeyTime = null;
-    letters[0].classList.add("current");
+
+    if (letters.length > 0) {
+        letters[0].classList.add("current");
+    }
+
+    // Reset HUD
+    if (hudWpm) hudWpm.textContent = "0";
+    if (hudAcc) hudAcc.innerHTML = "100<small>%</small>";
+    if (hudTime) hudTime.innerHTML = "0.0<small>s</small>";
+    if (hudMode) hudMode.textContent = currentModeName;
+    if (arenaStatus) arenaStatus.textContent = "Ready. Start typing to begin timing.";
 }
 
-function setSentence(text) {
+function setSentence(text, modeName = "Standard") {
+    currentModeName = modeName;
     sentence = text;
     startTest();
+}
+
+// Live timer tick for real-time responsiveness
+function updateLiveHud() {
+    if (!startTime) return;
+    const elapsedSeconds = (Date.now() - startTime) / 1000;
+    const minutes = elapsedSeconds / 60;
+    
+    // Live WPM based on characters typed so far
+    const wpm = minutes > 0.01 ? Math.max(0, Math.round((currentIndex / 5) / minutes)) : 0;
+    const accuracy = totalPresses > 0 ? Math.round(((totalPresses - wrongPresses) / totalPresses) * 100) : 100;
+
+    if (hudWpm) hudWpm.textContent = wpm;
+    if (hudAcc) hudAcc.innerHTML = `${accuracy}<small>%</small>`;
+    if (hudTime) hudTime.innerHTML = `${elapsedSeconds.toFixed(1)}<small>s</small>`;
 }
 
 // =====================================================
@@ -99,9 +141,7 @@ function setSentence(text) {
 function loadStats() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw === null) {
-            return {};
-        }
+        if (raw === null) return {};
         return JSON.parse(raw) || {};
     } catch (error) {
         return {};
@@ -112,7 +152,7 @@ function saveStats(stats) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
     } catch (error) {
-        console.log("Could not save stats:", error);
+        console.warn("Could not save stats:", error);
     }
 }
 
@@ -133,7 +173,7 @@ function loadRecovery() {
             }
         }
     } catch (error) {
-        // damaged data: just use the empty values
+        // damaged data fallback
     }
     return data;
 }
@@ -142,19 +182,17 @@ function saveRecovery(data) {
     try {
         localStorage.setItem(RECOVERY_KEY, JSON.stringify(data));
     } catch (error) {
-        console.log("Could not save recovery data:", error);
+        console.warn("Could not save recovery data:", error);
     }
 }
 
 // =====================================================
-// Weak keys (Phases 6-7)
+// Weak keys analysis
 // =====================================================
 function countKeys(list) {
     const stats = {};
-
     for (let i = 0; i < list.length; i++) {
         const key = list[i].expected;
-
         if (stats[key] === undefined) {
             stats[key] = { attempts: 0, misses: 0 };
         }
@@ -179,7 +217,6 @@ function addStats(saved, fresh) {
 
 function rankWeakKeys(stats, minAttempts) {
     const list = [];
-
     for (const key in stats) {
         if (stats[key].attempts >= minAttempts && stats[key].misses > 0) {
             list.push({
@@ -191,45 +228,47 @@ function rankWeakKeys(stats, minAttempts) {
         }
     }
 
-    list.sort(function (a, b) {
-        return b.rate - a.rate;
-    });
-
+    list.sort((a, b) => b.rate - a.rate);
     return list.slice(0, 5);
 }
 
-function weakKeysText(title, weak) {
-    let text = title + "\n";
+// Render formatted badges for weakest keys
+function renderWeakKeysHtml(weak) {
+    let html = '<div class="stat-pill-list">';
     for (let i = 0; i < weak.length; i++) {
         let name = weak[i].key;
-        if (name === " ") {
-            name = "space";
-        }
+        if (name === " ") name = "␣ Space";
         const percent = Math.round(weak[i].rate * 100);
-        text += name + ": " + percent + "% (" + weak[i].misses + " misses in " + weak[i].attempts + " tries)\n";
+        html += `
+            <div class="stat-pill-item">
+                <span class="key-badge">${name}</span>
+                <span class="stat-rate">${percent}% error</span>
+                <span class="stat-sub">${weak[i].misses} misses / ${weak[i].attempts} tries</span>
+            </div>
+        `;
     }
-    return text;
+    html += '</div>';
+    return html;
 }
 
 function showRoundWeakKeys(roundStats) {
     const weak = rankWeakKeys(roundStats, MIN_ROUND);
 
     if (weak.length === 0) {
-        weakBox.textContent = "No weak keys found this round.";
+        weakBox.innerHTML = "<span style='color:var(--accent-emerald);'>Outstanding accuracy! No weak keys identified this round.</span>";
         return;
     }
-    weakBox.textContent = weakKeysText("This round's weakest keys:", weak);
+    weakBox.innerHTML = renderWeakKeysHtml(weak);
 }
 
 // =====================================================
-// Phase 9: recovery cost
+// Recovery cost calculation (Mistake Latency)
 // =====================================================
-// Looks at one round and returns sums we can add to the saved totals.
 function measureRecovery(list) {
     const marked = new Array(list.length).fill(false);
     let mistakes = 0;
 
-    // Step 1: mark the keys that come right after each mistake
+    // Mark the keys that follow immediately after a mistake
     for (let i = 0; i < list.length; i++) {
         if (!list[i].correct) {
             mistakes++;
@@ -239,15 +278,13 @@ function measureRecovery(list) {
         }
     }
 
-    // Step 2: add up the gaps (latency) for the two groups
     const data = emptyRecovery();
     data.mistakes = mistakes;
 
     for (let i = 0; i < list.length; i++) {
         const t = list[i].latency;
-        if (t === null || t > MAX_LATENCY) {
-            continue;
-        }
+        if (t === null || t > MAX_LATENCY) continue;
+
         if (marked[i]) {
             data.afterSum += t;
             data.afterCount++;
@@ -270,12 +307,18 @@ function showRecovery() {
     const d = loadRecovery();
 
     if (d.mistakes < MIN_MISTAKES) {
-        recoveryBox.textContent =
-            "Recovery cost: needs " + MIN_MISTAKES + " mistakes to measure (you have " + d.mistakes + " so far).";
+        recoveryBox.innerHTML = `
+            <div style="padding: 8px 0; color: var(--text-muted);">
+                Calibrating recovery metrics...<br>
+                Requires <strong>${MIN_MISTAKES}</strong> mistakes to accurately compute hesitation delay.<br>
+                Progress: <strong style="color:var(--accent-cyan);">${d.mistakes} / ${MIN_MISTAKES}</strong> mistakes logged.
+            </div>
+        `;
         return;
     }
+
     if (d.afterCount === 0 || d.normalCount === 0) {
-        recoveryBox.textContent = "Recovery cost: not enough timing data yet.";
+        recoveryBox.innerHTML = "<span style='color:var(--text-muted);'>Not enough timing data recorded yet.</span>";
         return;
     }
 
@@ -284,30 +327,52 @@ function showRecovery() {
     const diff = afterAvg - normalAvg;
 
     if (diff <= 0) {
-        recoveryBox.textContent =
-            "Recovery cost: none detected. Your keys after a mistake (" + Math.round(afterAvg) +
-            " ms) are not slower than normal (" + Math.round(normalAvg) + " ms).";
+        recoveryBox.innerHTML = `
+            <div class="stat-pill-list">
+                <div class="stat-pill-item">
+                    <span>Average Keystroke</span>
+                    <strong style="color:var(--accent-cyan);">${Math.round(normalAvg)} ms</strong>
+                </div>
+                <div class="stat-pill-item">
+                    <span>Post-Mistake Keystroke</span>
+                    <strong style="color:var(--accent-emerald);">${Math.round(afterAvg)} ms</strong>
+                </div>
+            </div>
+            <p style="margin-top: 10px; color: var(--accent-emerald); font-size: 12px;">
+                ✓ Flawless recovery! You do not hesitate after mistakes.
+            </p>
+        `;
         return;
     }
 
-    // total extra time spent on the marked keys, shared out per mistake
     const lostPerMistake = (diff * d.afterCount) / d.mistakes / 1000;
 
-    recoveryBox.textContent =
-        "Recovery cost (based on " + d.mistakes + " mistakes):\n" +
-        "Normal key: " + Math.round(normalAvg) + " ms  |  Right after a mistake: " + Math.round(afterAvg) + " ms\n" +
-        "Each mistake costs you about " + lostPerMistake.toFixed(2) + " seconds.";
+    recoveryBox.innerHTML = `
+        <div class="stat-pill-list">
+            <div class="stat-pill-item">
+                <span>Normal Pace</span>
+                <strong style="color:var(--accent-cyan);">${Math.round(normalAvg)} ms</strong>
+            </div>
+            <div class="stat-pill-item">
+                <span>Post-Mistake Pace</span>
+                <strong style="color:var(--accent-rose);">${Math.round(afterAvg)} ms (+${Math.round(diff)}ms)</strong>
+            </div>
+            <div class="stat-pill-item" style="border-color: rgba(251, 113, 133, 0.3); background: rgba(251, 113, 133, 0.08);">
+                <span>Penalty per Mistake</span>
+                <strong style="color:var(--accent-rose); font-size: 15px;">~${lostPerMistake.toFixed(2)}s lost</strong>
+            </div>
+        </div>
+    `;
 }
 
 // =====================================================
-// Phase 10: keyboard heatmap
+// Keyboard Heatmap
 // =====================================================
 function makeKeyElement(key, saved) {
     const el = document.createElement("div");
     el.className = "kb-key";
     el.textContent = key === " " ? "space" : key;
 
-    // Add together the lowercase and uppercase version of the key
     const names = [key];
     if (key.toUpperCase() !== key) {
         names.push(key.toUpperCase());
@@ -325,13 +390,15 @@ function makeKeyElement(key, saved) {
 
     if (attempts < MIN_HEAT) {
         el.classList.add("nodata");
-        el.title = "Not enough data yet";
+        el.title = `Key: '${key}' (Needs at least ${MIN_HEAT} attempts)`;
     } else {
         const rate = misses / attempts;
-        // 0% errors = green (hue 120), 30% or more = red (hue 0)
+        // 0% error = hue 120 (emerald green), 30%+ error = hue 0 (crimson red)
         const hue = 120 * (1 - Math.min(rate / 0.3, 1));
-        el.style.backgroundColor = "hsl(" + hue + ", 70%, 60%)";
-        el.title = Math.round(rate * 100) + "% errors (" + misses + " misses in " + attempts + " tries)";
+        el.style.backgroundColor = `hsl(${hue}, 68%, 38%)`;
+        el.style.color = "#ffffff";
+        el.style.borderColor = `hsl(${hue}, 80%, 55%)`;
+        el.title = `Key: '${key}' | ${Math.round(rate * 100)}% errors (${misses} misses in ${attempts} attempts)`;
     }
     return el;
 }
@@ -343,7 +410,7 @@ function drawKeyboard() {
     for (let r = 0; r < KEY_ROWS.length; r++) {
         const row = document.createElement("div");
         row.className = "kb-row";
-        row.style.marginLeft = (r * 18) + "px";
+        row.style.marginLeft = `${r * 18}px`;
 
         for (let c = 0; c < KEY_ROWS[r].length; c++) {
             row.appendChild(makeKeyElement(KEY_ROWS[r][c], saved));
@@ -351,9 +418,10 @@ function drawKeyboard() {
         keyboardBox.appendChild(row);
     }
 
+    // Spacebar row
     const spaceRow = document.createElement("div");
     spaceRow.className = "kb-row";
-    spaceRow.style.marginLeft = "90px";
+    spaceRow.style.marginLeft = "105px";
     const spaceKey = makeKeyElement(" ", saved);
     spaceKey.classList.add("space");
     spaceRow.appendChild(spaceKey);
@@ -361,17 +429,21 @@ function drawKeyboard() {
 }
 
 // =====================================================
-// Showing all-time stats (calls the pieces above)
+// Showing all-time stats
 // =====================================================
 function showAllTime() {
     const saved = loadStats();
     const weak = rankWeakKeys(saved, MIN_ALL_TIME);
 
     if (weak.length === 0) {
-        allTimeBox.textContent =
-            "Not enough data yet (a key needs " + MIN_ALL_TIME + " tries and at least one miss).";
+        allTimeBox.innerHTML = `
+            <div style="color: var(--text-muted); padding: 6px 0;">
+                Accumulating key metrics...<br>
+                A key requires at least <strong>${MIN_ALL_TIME}</strong> attempts to qualify for all-time rankings.
+            </div>
+        `;
     } else {
-        allTimeBox.textContent = weakKeysText("All-time weakest keys:", weak);
+        allTimeBox.innerHTML = renderWeakKeysHtml(weak);
     }
 
     showRecovery();
@@ -379,11 +451,11 @@ function showAllTime() {
 }
 
 // =====================================================
-// Phase 8: your own text
+// Text sanitization
 // =====================================================
 function cleanText(raw) {
-    let text = raw.replace(/\s+/g, " ");        // line breaks and tabs become one space
-    text = text.replace(/[^\x20-\x7E]/g, "");   // remove characters not on a normal keyboard
+    let text = raw.replace(/\s+/g, " ");
+    text = text.replace(/[^\x20-\x7E]/g, "");
     text = text.trim();
     if (text.length > MAX_LENGTH) {
         text = text.slice(0, MAX_LENGTH).trim();
@@ -392,7 +464,7 @@ function cleanText(raw) {
 }
 
 // =====================================================
-// Phase 10: practice text built from your weak keys
+// Dynamic weak-key practice drill generator
 // =====================================================
 function pickRandom(list) {
     return list[Math.floor(Math.random() * list.length)];
@@ -410,51 +482,36 @@ function shuffle(list) {
 
 function buildPracticeText() {
     const weak = rankWeakKeys(loadStats(), MIN_PRACTICE);
-    if (weak.length === 0) {
-        return null;
-    }
+    if (weak.length === 0) return null;
 
-    // weight of each weak key = its error rate
     const weights = {};
     for (let i = 0; i < weak.length; i++) {
         weights[weak[i].key] = weak[i].rate;
     }
 
-    // give every word a score: more weak letters = higher score
     const scored = [];
     for (let i = 0; i < WORDS.length; i++) {
         let score = 0;
         for (let c = 0; c < WORDS[i].length; c++) {
             const w = weights[WORDS[i][c]];
-            if (w !== undefined) {
-                score += w;
-            }
+            if (w !== undefined) score += w;
         }
         scored.push({ word: WORDS[i], score: score + Math.random() * 0.2 });
     }
-    scored.sort(function (a, b) {
-        return b.score - a.score;
-    });
+
+    scored.sort((a, b) => b.score - a.score);
 
     const chosen = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < Math.min(8, scored.length); i++) {
         chosen.push(scored[i].word);
     }
 
-    // weak keys that are not lowercase letters need their own small pieces
     for (let i = 0; i < weak.length; i++) {
         const key = weak[i].key;
+        if ((key >= "a" && key <= "z") || key === " ") continue;
 
-        if (key >= "a" && key <= "z") {
-            continue;
-        }
-        if (key === " ") {
-            continue;
-        }
         if (key >= "A" && key <= "Z") {
-            const pool = WORDS.filter(function (w) {
-                return w[0] === key.toLowerCase();
-            });
+            const pool = WORDS.filter(w => w[0] === key.toLowerCase());
             if (pool.length > 0) {
                 chosen.push(key + pickRandom(pool).slice(1));
             } else {
@@ -469,19 +526,38 @@ function buildPracticeText() {
 }
 
 // =====================================================
-// Finishing a test (Phases 4-9)
+// Finishing a test
 // =====================================================
 function showResults() {
+    if (liveInterval) {
+        clearInterval(liveInterval);
+        liveInterval = null;
+    }
+
     const seconds = (Date.now() - startTime) / 1000;
     const minutes = seconds / 60;
-    const wpm = Math.round((sentence.length / 5) / minutes);
+    const wpm = Math.max(0, Math.round((sentence.length / 5) / minutes));
     const words = sentence.split(" ").length;
     const correctPresses = totalPresses - wrongPresses;
-    const accuracy = Math.round((correctPresses / totalPresses) * 100);
+    const accuracy = totalPresses > 0 ? Math.round((correctPresses / totalPresses) * 100) : 100;
 
-    results.textContent =
-        "WPM: " + wpm + "  |  Accuracy: " + accuracy + "%\n" +
-        "Words: " + words + "  |  Time: " + seconds.toFixed(1) + "s";
+    results.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+                <strong style="color:var(--accent-cyan); font-size: 24px;">${wpm} WPM</strong>
+                <span style="margin: 0 10px; color: var(--border-subtle);">|</span>
+                <span style="color:var(--accent-emerald); font-weight: 700;">${accuracy}% Accuracy</span>
+            </div>
+            <div style="font-size: 14px; color: var(--text-secondary);">
+                <span>${words} words</span> • <span>${seconds.toFixed(1)}s elapsed</span> • <span>${wrongPresses} mistakes</span>
+            </div>
+        </div>
+    `;
+
+    if (hudWpm) hudWpm.textContent = wpm;
+    if (hudAcc) hudAcc.innerHTML = `${accuracy}<small>%</small>`;
+    if (hudTime) hudTime.innerHTML = `${seconds.toFixed(1)}<small>s</small>`;
+    if (arenaStatus) arenaStatus.textContent = "Test Completed! Check diagnostics below or press Esc to restart.";
 
     const roundStats = countKeys(records);
     showRoundWeakKeys(roundStats);
@@ -492,24 +568,36 @@ function showResults() {
 }
 
 // =====================================================
-// Listening to the keyboard (Phases 2-5)
+// Keyboard Listener
 // =====================================================
 document.addEventListener("keydown", function (event) {
-    // don't count typing inside the text box
+    // Quick restart shortcut with Escape
+    if (event.key === "Escape") {
+        event.preventDefault();
+        startTest();
+        return;
+    }
+
+    // Ignore keystrokes when typing inside the custom textarea
     if (event.target.tagName === "TEXTAREA") {
         return;
     }
-    // don't count shortcuts like Ctrl+C
-    if (event.ctrlKey || event.metaKey) {
+
+    // Ignore browser shortcuts
+    if (event.ctrlKey || event.metaKey || event.altKey) {
         return;
     }
-    // ignore Shift, Enter, Backspace and other special keys
+
+    // Ignore special non-character keys
     if (event.key.length > 1) {
         return;
     }
+
     if (currentIndex >= sentence.length) {
         return;
     }
+
+    // Prevent spacebar scrolling page down
     if (event.key === " ") {
         event.preventDefault();
     }
@@ -517,6 +605,9 @@ document.addEventListener("keydown", function (event) {
     const now = Date.now();
     if (startTime === null) {
         startTime = now;
+        if (arenaStatus) arenaStatus.textContent = "Test in progress...";
+        // Start live ticking timer
+        liveInterval = setInterval(updateLiveHud, 100);
     }
 
     let latency = null;
@@ -541,6 +632,7 @@ document.addEventListener("keydown", function (event) {
         letters[currentIndex].classList.remove("current");
         letters[currentIndex].classList.remove("wrong");
         letters[currentIndex].classList.add("correct");
+
         currentIndex++;
 
         if (currentIndex < sentence.length) {
@@ -552,52 +644,77 @@ document.addEventListener("keydown", function (event) {
         wrongPresses++;
         letters[currentIndex].classList.add("wrong");
     }
+
+    updateLiveHud();
 });
 
 // =====================================================
-// Buttons
+// Interactive UI Handlers & Buttons
 // =====================================================
-restartBtn.addEventListener("click", function () {
-    startTest();
-    restartBtn.blur();
-});
+if (restartBtn) {
+    restartBtn.addEventListener("click", function () {
+        startTest();
+        restartBtn.blur();
+    });
+}
 
-defaultBtn.addEventListener("click", function () {
-    setSentence(DEFAULT_SENTENCE);
-    defaultBtn.blur();
-});
+if (defaultBtn) {
+    defaultBtn.addEventListener("click", function () {
+        setSentence(DEFAULT_SENTENCE, "Standard");
+        defaultBtn.blur();
+    });
+}
 
-useCustomBtn.addEventListener("click", function () {
-    const text = cleanText(customBox.value);
-    if (text.length < MIN_CUSTOM_LENGTH) {
-        alert("Please paste at least " + MIN_CUSTOM_LENGTH + " typeable characters.");
-        return;
-    }
-    setSentence(text);
-    useCustomBtn.blur();
-});
+if (practiceBtn) {
+    practiceBtn.addEventListener("click", function () {
+        const text = buildPracticeText();
+        if (text === null) {
+            alert("No weak keys identified yet. Complete a few test rounds first!");
+        } else {
+            setSentence(text, "Weak-Key Drill");
+        }
+        practiceBtn.blur();
+    });
+}
 
-practiceBtn.addEventListener("click", function () {
-    const text = buildPracticeText();
-    if (text === null) {
-        alert("No weak keys found yet. Finish a few tests first.");
-    } else {
-        setSentence(text);
-    }
-    practiceBtn.blur();
-});
+if (useCustomBtn && customBox) {
+    useCustomBtn.addEventListener("click", function () {
+        const text = cleanText(customBox.value);
+        if (text.length < MIN_CUSTOM_LENGTH) {
+            alert(`Please input at least ${MIN_CUSTOM_LENGTH} valid characters.`);
+            return;
+        }
+        setSentence(text, "Custom Text");
+        useCustomBtn.blur();
+    });
+}
 
-resetBtn.addEventListener("click", function () {
-    if (confirm("Delete all saved stats?")) {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(RECOVERY_KEY);
-        showAllTime();
-    }
-    resetBtn.blur();
-});
+if (customBox && charCounter) {
+    customBox.addEventListener("input", function () {
+        const len = customBox.value.length;
+        charCounter.textContent = `${len} / ${MAX_LENGTH}`;
+        if (len > MAX_LENGTH) {
+            charCounter.style.color = "var(--accent-rose)";
+        } else {
+            charCounter.style.color = "var(--text-muted)";
+        }
+    });
+}
+
+if (resetBtn) {
+    resetBtn.addEventListener("click", function () {
+        if (confirm("Reset all stored typing statistics and calibration data?")) {
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(RECOVERY_KEY);
+            showAllTime();
+            startTest();
+        }
+        resetBtn.blur();
+    });
+}
 
 // =====================================================
-// Start
+// Initialize on page load
 // =====================================================
 startTest();
 showAllTime();
