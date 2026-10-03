@@ -185,21 +185,35 @@
             <div class="section-head">
                 <div class="title-with-desc">
                     <h2>Custom Passage & Code Practice</h2>
-                    <p class="legend-note">Paste code snippets, formulas, or tricky prose (up to 300 characters)</p>
+                    <p class="legend-note">Paste code snippets, articles, or books (unlimited length). Type untimed or with a 60s limit.</p>
                 </div>
-                <span class="char-count" id="char-counter">0 / 300</span>
+                <span class="char-count" id="char-counter">0 characters</span>
             </div>
 
             <div class="custom-input-box">
                 <textarea id="custom"
-                    placeholder="Paste custom text or programming syntax here (e.g. const map = new Map(); func(x, y) => { return x + y; })"></textarea>
+                    placeholder="Paste any custom passage, essay, article, or code syntax here (unlimited length). Test accuracy untimed or challenge yourself with 60s."></textarea>
                 <div class="custom-actions">
-                    <button id="use-custom" class="btn btn-secondary">
+                    <button id="use-custom" class="btn btn-secondary" title="Start with currently selected timer mode">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <polygon points="5 3 19 12 5 21 5 3" />
                         </svg>
                         <span>Start With My Text</span>
+                    </button>
+                    <button id="custom-untimed" class="btn btn-secondary" title="Start custom passage without time limit to test full accuracy">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        <span>Untimed (Full Text)</span>
+                    </button>
+                    <button id="custom-60s" class="btn btn-accent" title="Start custom passage with 60s time limit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 14 10" />
+                        </svg>
+                        <span>60s Timed</span>
                     </button>
                 </div>
             </div>

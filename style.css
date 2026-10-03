@@ -358,11 +358,33 @@ kbd {
   line-height: 1.8;
   letter-spacing: 0.5px;
   min-height: 120px;
+  max-height: 280px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
   outline: none;
   cursor: text;
   user-select: none;
   word-break: break-word;
   margin-bottom: 24px;
+  padding-right: 8px;
+}
+
+.typing-display::-webkit-scrollbar {
+  width: 6px;
+}
+
+.typing-display::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 999px;
+}
+
+.typing-display::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+.typing-display::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-cyan);
 }
 
 .typing-display span {
@@ -752,6 +774,8 @@ textarea::placeholder {
 .custom-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 /* ---------- Footer ---------- */

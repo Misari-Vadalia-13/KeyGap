@@ -3,7 +3,6 @@
 // ===================================================================
 
 // ---------- Settings ----------
-const MAX_LENGTH = 300;          // longest custom text we accept
 const MIN_CUSTOM_LENGTH = 5;     // shortest custom text we accept
 const MIN_ROUND = 2;             // tries a key needs to be ranked in one round
 const MIN_ALL_TIME = 10;         // tries a key needs to be ranked in all-time stats
@@ -91,6 +90,8 @@ const defaultBtn = document.getElementById("default-text");
 const practiceBtn = document.getElementById("practice");
 const refreshTextBtn = document.getElementById("refresh-text");
 const useCustomBtn = document.getElementById("use-custom");
+const customUntimedBtn = document.getElementById("custom-untimed");
+const custom60sBtn = document.getElementById("custom-60s");
 const resetBtn = document.getElementById("reset-stats");
 
 // Mode / Timer Segmented Buttons
@@ -541,16 +542,12 @@ function showAllTime() {
 }
 
 // =====================================================
-// Text sanitization
+// Text sanitization (Unlimited length)
 // =====================================================
 function cleanText(raw) {
     let text = raw.replace(/\s+/g, " ");
     text = text.replace(/[^\x20-\x7E]/g, "");
-    text = text.trim();
-    if (text.length > MAX_LENGTH) {
-        text = text.slice(0, MAX_LENGTH).trim();
-    }
-    return text;
+    return text.trim();
 }
 
 // =====================================================
@@ -755,6 +752,7 @@ document.addEventListener("keydown", function (event) {
 
         if (currentIndex < sentence.length) {
             letters[currentIndex].classList.add("current");
+            letters[currentIndex].scrollIntoView({ block: "nearest", inline: "nearest" });
         } else {
             showResults(false); // Completed passage
         }
@@ -826,27 +824,54 @@ if (mode120sBtn) {
     mode120sBtn.addEventListener("click", () => setTimerMode(120, mode120sBtn));
 }
 
-if (useCustomBtn && customBox) {
+// Custom text launch handlers
+function loadCustomText(targetTimerSeconds, activeSegmentBtn) {
+    if (!customBox) return;
+    const text = cleanText(customBox.value);
+    if (text.length < MIN_CUSTOM_LENGTH) {
+        alert(`Please paste or enter at least ${MIN_CUSTOM_LENGTH} valid characters.`);
+        return;
+    }
+
+    if (targetTimerSeconds !== null) {
+        timerLimit = targetTimerSeconds;
+        segmentBtns.forEach(btn => {
+            if (btn) btn.classList.remove("active");
+        });
+        if (activeSegmentBtn) activeSegmentBtn.classList.add("active");
+    }
+
+    const modeLabel = timerLimit > 0 ? `Custom (${timerLimit}s)` : "Custom (Untimed)";
+    setSentence(text, modeLabel);
+    textbox.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+if (useCustomBtn) {
     useCustomBtn.addEventListener("click", function () {
-        const text = cleanText(customBox.value);
-        if (text.length < MIN_CUSTOM_LENGTH) {
-            alert(`Please input at least ${MIN_CUSTOM_LENGTH} valid characters.`);
-            return;
-        }
-        setSentence(text, "Custom Text");
+        loadCustomText(null, null);
         useCustomBtn.blur();
+    });
+}
+
+if (customUntimedBtn) {
+    customUntimedBtn.addEventListener("click", function () {
+        loadCustomText(0, modeUntimedBtn);
+        customUntimedBtn.blur();
+    });
+}
+
+if (custom60sBtn) {
+    custom60sBtn.addEventListener("click", function () {
+        loadCustomText(60, mode60sBtn);
+        custom60sBtn.blur();
     });
 }
 
 if (customBox && charCounter) {
     customBox.addEventListener("input", function () {
         const len = customBox.value.length;
-        charCounter.textContent = `${len} / ${MAX_LENGTH}`;
-        if (len > MAX_LENGTH) {
-            charCounter.style.color = "var(--accent-rose)";
-        } else {
-            charCounter.style.color = "var(--text-muted)";
-        }
+        charCounter.textContent = `${len.toLocaleString()} characters`;
+        charCounter.style.color = "var(--text-muted)";
     });
 }
 
