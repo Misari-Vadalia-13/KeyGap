@@ -15,6 +15,12 @@ const MAX_LATENCY = 2000;        // ignore pauses longer than this (ms) - user l
 const MIN_MISTAKES = 5;          // mistakes needed before displaying recovery cost
 
 // Bayesian / Laplace smoothing priors for error rate: (misses + ALPHA) / (attempts + BETA)
+// Prior Design Note:
+// Currently uses fixed Laplace hyperparameters (alpha = 1, beta = 10), which assumes a prior error rate of 10% (1/10).
+// Architectural Proposal: In a future iteration, compute an empirical Bayes prior directly from the user's overall
+// session/all-time error rate (priorRate = totalMisses / totalAttempts). The hyperparameters would then scale as
+// alpha = priorRate * M and beta = M (where M is a pseudo-observation strength parameter, e.g., M = 10).
+// This dynamically calibrates priors without penalizing typists whose baseline accuracy is 99%+.
 const SMOOTH_ALPHA = 1;
 const SMOOTH_BETA = 10;
 
@@ -505,7 +511,7 @@ function measureRecovery(list) {
         }
     }
 
-    const avgBaseline = baselineCount > 0 ? (baselineSum / baselineCount) : 220;
+    const roundFallbackBaseline = baselineCount > 0 ? (baselineSum / baselineCount) : 220;
 
     for (let i = 0; i < list.length; i++) {
         if (!list[i].correct) {
@@ -515,17 +521,22 @@ function measureRecovery(list) {
                 roundByKey[mistypedKey] = { totalLostMs: 0, count: 0 };
             }
 
+            // Baseline frozen at the exact moment of this mistake (excludes post-error keystrokes)
+            const baseline = (list[i].baselineAtError !== undefined && list[i].baselineAtError !== null)
+                ? list[i].baselineAtError
+                : roundFallbackBaseline;
+
             let extraLost = 0;
-            // Measure until keystroke speed returns to baseline or max lookahead
+            // Measure subsequent keystrokes up to RECOVERY_LOOKAHEAD (5) or until velocity recovers within 15%
             for (let j = i + 1; j <= i + RECOVERY_LOOKAHEAD && j < list.length; j++) {
                 const t = list[j].latency;
                 if (t === null || t > MAX_LATENCY) continue;
 
-                if (t > avgBaseline) {
-                    extraLost += (t - avgBaseline);
+                if (t > baseline) {
+                    extraLost += (t - baseline);
                 }
-                // Stopped hesitating once keystroke reaches baseline pace
-                if (t <= avgBaseline * 1.15) break;
+                // Stopped hesitating once keystroke reaches baseline pace (within 15%)
+                if (t <= baseline * 1.15) break;
             }
 
             totalLostMs += extraLost;
@@ -746,12 +757,13 @@ function makeKeyElement(key, savedStats, savedLatency, savedRecoveryByKey) {
             el.title = `Key: '${key}' | ${attempts} attempts (${misses} misses)\nNeeds at least ${minRequired} attempts for calibration.`;
         } else {
             const rawRate = misses / attempts;
+            const smoothedRate = (misses + SMOOTH_ALPHA) / (attempts + SMOOTH_BETA);
             // 0% error = Hue 120 (emerald green), 30%+ error = Hue 0 (crimson red)
             const hue = 120 * (1 - Math.min(rawRate / 0.30, 1));
             el.style.backgroundColor = `hsl(${hue}, 68%, 38%)`;
             el.style.color = "#ffffff";
             el.style.borderColor = `hsl(${hue}, 80%, 55%)`;
-            el.title = `Key: '${key}' | ${Math.round(rawRate * 100)}% error rate (${misses} misses in ${attempts} attempts)`;
+            el.title = `Key: '${key}' | ${Math.round(rawRate * 100)}% error rate (smoothed: ${(smoothedRate * 100).toFixed(1)}%) • ${misses} misses in ${attempts} attempts`;
         }
     } else if (heatmapMetric === "latency") {
         if (latencyCount < minRequired) {
@@ -1060,15 +1072,22 @@ document.addEventListener("keydown", function (event) {
 
     totalPresses++;
 
-    const expected = sentence[currentIndex];
-    // Map strictly by produced character (event.key) for layout independence
-    const isCorrect = event.key === expected;
+    let baselineAtError = null;
+    if (!isCorrect) {
+        if (recentCorrectLatencies.length > 0) {
+            const sum = recentCorrectLatencies.reduce((acc, val) => acc + val, 0);
+            baselineAtError = sum / recentCorrectLatencies.length;
+        } else {
+            baselineAtError = 220; // Default baseline cadence before sufficient correct keystrokes
+        }
+    }
 
     records.push({
         expected: expected,
         typed: event.key,
         correct: isCorrect,
-        latency: latency
+        latency: latency,
+        baselineAtError: baselineAtError
     });
 
     if (isCorrect) {
