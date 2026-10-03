@@ -1072,6 +1072,10 @@ document.addEventListener("keydown", function (event) {
 
     totalPresses++;
 
+    const expected = sentence[currentIndex];
+    // Map strictly by produced character (event.key) for layout independence
+    const isCorrect = event.key === expected;
+
     let baselineAtError = null;
     if (!isCorrect) {
         if (recentCorrectLatencies.length > 0) {
