@@ -121,12 +121,17 @@ The heatmap supports three diagnostic overlays using fixed absolute thresholds:
    - **Current Round**: Requires $\ge 5$ attempts on a key to appear in round weak keys.
    - **All-Time Stats**: Requires $\ge 20$ attempts on a key to qualify for all-time weakest keys.
    - **Heatmap Minimum**: Requires $\ge 5$ attempts (or 2 mistakes for recovery mode); keys below threshold display neutral gray styling ("Not enough data").
-4. **Targeted Weak-Key Drills**:
+4. **Wikipedia-Sourced Test Passages**:
+   - Expanded text passages: each passage is calibrated to **1,100 to 1,400 characters** (~180 to 220 words).
+   - Engineered so that typists averaging 45–55 WPM will not complete the text within 120 seconds, allowing sustained rhythm and uninterrupted recovery measurement across 60s, 120s, and untimed sessions.
+   - Dynamically pre-fetches and cleans encyclopedia articles via Wikipedia's public CORS Action API across science, history, nature, and technology.
+   - Automatically falls back to an offline pool of 12 curated Wikipedia excerpts (e.g., *James Webb Space Telescope*, *Alan Turing*, *Voyager 1*, *The Great Barrier Reef*) ensuring instant loading and offline support.
+5. **Targeted Weak-Key Drills**:
    - Clicking **Practice Weak Keys** queries your accumulated weakest keys.
    - It filters an embedded 100-word vocabulary dictionary, scores words according to the error weights of your weakest keys, and constructs a targeted practice drill focusing on your most error-prone characters. *(Note: Drills are generated statically at the start of the round based on stored stats; they do not dynamically alter the text during mid-test typing).*
-5. **DOM Virtualization for Massive Passages**:
-   - Standard texts render all characters directly into the DOM.
-   - For custom text exceeding 500 characters, KeyGap switches to a virtualized sliding window (rendering 35 characters prior and 145 characters ahead of the active cursor).
+6. **DOM Virtualization for Massive Passages**:
+   - Standard texts (up to 2,000 characters) render all characters directly into the DOM with smooth line-by-line scrolling.
+   - For custom text exceeding 2,000 characters, KeyGap switches to a virtualized sliding window (rendering 35 characters prior and 145 characters ahead of the active cursor).
    - **Benchmark (Tested on AMD Ryzen 5 8645HS, 16 GB RAM, Windows 11)**:
      - Input size: **500,076 characters** (~488 KB string).
      - Calculation time per sliding window slice: **$0.0014\text{ ms}$ ($1.4\ \mu\text{s}$)**.

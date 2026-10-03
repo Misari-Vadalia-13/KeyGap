@@ -75,34 +75,178 @@ const LAYOUTS = {
 let currentLayout = safeGet(LAYOUT_KEY, "qwerty");
 if (!LAYOUTS[currentLayout]) currentLayout = "qwerty";
 
-// ---------- Rich Paragraph Pool ----------
-const PARAGRAPHS = [
-    "The craft of software development is not merely about writing code that machines can execute, but designing resilient architectures that other humans can comprehend, maintain, and build upon with enduring confidence.",
-    "Deep focus has become the rarest superpower of our modern digital era. When you ruthlessly eliminate external distractions, your mind enters a frictionless state of flow where complex engineering hurdles yield to crystal clarity.",
-    "Every deliberate keystroke carries intent. As velocity and rhythmic cadence align, typing ceases to be a conscious mechanical effort and evolves into a seamless conduit translating raw thought directly into the terminal.",
-    "Clean code reads like carefully edited prose. Every variable identifier, function signature, and high-level abstraction should weave an intuitive narrative that exposes its core architectural intent without requiring decipherment.",
-    "In the crucible of rapid innovation lies the patience to iterate relentlessly. Incremental, compounding daily improvements quietly outdistance sporadic bursts of chaotic brilliance across any meaningful career timeline.",
-    "Mistakes are never indicators of personal inadequacy, but rather precise diagnostic signals. By observing exactly where hesitation and micro-latencies occur, you expose the mechanical bottlenecks standing between practice and fluency.",
-    "A digital computer represents a bicycle for the human intellect. It magnifies cognitive bandwidth and creative imagination, empowering curious minds to construct global platforms and unravel mysteries once deemed utterly impenetrable.",
-    "True technical mastery requires humility before fundamentals. Just as the seasoned concert pianist studies subtle chord voicings, the disciplined typist cultivates relaxed finger placement and accuracy before pursuing blistering speed.",
-    "Under the ambient luminescence of the workstation display, abstract blueprints crystallize into interactive reality. What originates as an isolated script in an editor eventually becomes a living system depended upon by thousands.",
-    "Resilience is forged during those quiet stretches when tangible progress feels elusive. Trusting the systematic repetition of disciplined craft invariably produces breakthroughs that appear effortless to casual observers.",
-    "Software architecture resembles living thought crystallized into structure. Exceptional systems adapt gracefully to unforeseen operational demands while faithfully preserving the elegance of their underlying design."
+// ---------- Wikipedia Paragraph Pool & Dynamic Fetching Engine ----------
+// Sourced and structured so average typists (~45-55 WPM) will not finish within 120 seconds.
+const WIKI_FALLBACK_PARAGRAPHS = [
+    {
+        title: "James Webb Space Telescope",
+        text: "The James Webb Space Telescope is a space telescope designed primarily to conduct infrared astronomy. As the largest optical telescope in space, its high resolution and sensitivity allow it to view objects too old, distant, or faint for the Hubble Space Telescope. This enables investigations across many fields of astronomy and cosmology, such as observation of the first stars and the formation of the first galaxies, and detailed atmospheric characterization of potentially habitable exoplanets. The telescope was launched on 25 December 2021 on an Ariane 5 rocket from Kourou, French Guiana, and arrived at the Sun-Earth L2 Lagrange point in January 2022. The first image from Webb was released to the public on 11 July 2022. The telescope's primary mirror consists of 18 hexagonal mirror segments made of gold-plated beryllium, which together create a 6.5-meter diameter mirror compared to Hubble's 2.4-meter mirror. Unlike Hubble, which observes in the near ultraviolet and optical spectra, Webb observes in a lower frequency range, from long-wavelength visible light through mid-infrared. The telescope must be kept extremely cold, below 50 Kelvin, to observe faint infrared signals without interference from any other thermal sources."
+    },
+    {
+        title: "Alan Turing & Modern Computing",
+        text: "Alan Mathison Turing was an English mathematician, computer scientist, logician, cryptanalyst, philosopher, and theoretical biologist. Turing was highly influential in the development of theoretical computer science, providing a formalisation of the concepts of algorithm and computation with the Turing machine, which can be considered a model of a general-purpose computer. He is widely considered to be the father of theoretical computer science and artificial intelligence. During the Second World War, Turing was a leading participant in war-time codebreaking at Bletchley Park. He played a pivotal role in cracking intercepted coded messages that enabled the Allies to defeat the Axis powers in many critical engagements, including the Battle of the Atlantic. After the war, Turing designed the Automatic Computing Engine, which was one of the first designs for a stored-program computer. In 1948, Turing joined Max Newman's Computing Machine Laboratory at the Victoria University of Manchester, where he helped develop the Manchester computers and became interested in mathematical biology. He wrote a landmark paper on the chemical basis of morphogenesis and predicted oscillating chemical reactions such as the Belousov-Zhabotinsky reaction."
+    },
+    {
+        title: "Voyager 1 & Interstellar Mission",
+        text: "Voyager 1 is a space probe launched by NASA on 5 September 1977 as part of the Voyager program to study the outer Solar System and interstellar space beyond the Sun's heliosphere. Launched 16 days after its twin Voyager 2, Voyager 1 operated for nearly five decades and continues to communicate with the Deep Space Network to receive routine commands and transmit science data. At a distance of over 160 astronomical units from Earth, it is the most distant human-made object from Earth. The probe made flybys of Jupiter, Saturn, and Saturn's largest moon, Titan. NASA opted to emphasize the Titan flyby because the moon was known to possess a dense atmosphere. Voyager 1 studied the weather, magnetic fields, and rings of the two gas giants and was the first probe to provide detailed images of their moons. After completing its primary planetary exploration mission with the flyby of Saturn in November 1980, Voyager 1 began an extended mission to explore the outer reaches of the Solar System. On 25 August 2012, Voyager 1 crossed the heliopause and entered interstellar space, making it the first spacecraft to leave the gravitational and magnetic dominance of the Sun."
+    },
+    {
+        title: "The Great Barrier Reef",
+        text: "The Great Barrier Reef is the world's largest coral reef system, composed of over 2,900 individual reefs and 900 islands stretching for over 2,300 kilometres over an area of approximately 344,400 square kilometres. The reef is located in the Coral Sea, off the coast of Queensland, Australia, separated from the coast by a channel 160 kilometres wide in places and over 61 metres deep. The Great Barrier Reef can be seen from outer space and is the world's biggest single structure made by living organisms. This reef structure is composed of and built by billions of tiny organisms, known as coral polyps. It supports a wide diversity of life and was selected as a World Heritage Site in 1981. A large part of the reef is protected by the Great Barrier Reef Marine Park, which helps to limit the impact of human use, such as fishing and tourism. Environmental pressures on the reef and its ecosystem include runoff, climate change accompanied by mass coral bleaching, dumping of dredge sludge and cyclic population outbreaks of the crown-of-thorns starfish. According to a study published in October 2020, the reef had lost more than half of its corals since 1995 due to warming sea temperatures driven by global climate change."
+    },
+    {
+        title: "The Printing Press",
+        text: "A printing press is a mechanical device for applying pressure to an inked surface resting upon a print medium, such as paper or cloth, thereby transferring the ink. It marked a dramatic improvement on earlier printing methods in which the cloth, paper or other medium was brushed or rubbed repeatedly to achieve the transfer of ink, and accelerated the process. Typically used for texts, the invention and global spread of the movable type printing press was one of the most influential events in the second millennium. In the mid-fifteenth century, Johannes Gutenberg introduced the mechanical movable type printing system to Europe, creating the Gutenberg Bible which was acclaimed for its aesthetic and technical quality. The rapid arrival of mechanical movable type printing across Renaissance Europe initiated the era of mass communication, which permanently altered the structure of society. The relatively unrestricted circulation of information and revolutionary ideas captured the masses in the Reformation and threatened the power of political and religious authorities. The sharp increase in literacy broke the monopoly of the literate elite on education and learning and bolstered the emerging middle class across the continent."
+    },
+    {
+        title: "The Mariana Trench",
+        text: "The Mariana Trench is an oceanic trench located in the western Pacific Ocean, about 200 kilometres east of the Mariana Islands. It is the deepest oceanic trench on Earth, crescent-shaped and measuring about 2,550 kilometres in length and 69 kilometres in width. The maximum known depth is 10,984 metres at the southern end of a small slot-shaped valley in its floor known as the Challenger Deep. If Mount Everest were placed into the trench at its deepest point, its peak would still be underwater by more than two kilometres. At the bottom of the trench, the water column above exerts a hydrostatic pressure of 1,086 bar, more than one thousand times the standard atmospheric pressure at sea level. At this extreme depth, the density of water is increased by nearly five percent. The temperature at the seabed is between one and four degrees Celsius. Despite the total absence of sunlight and immense pressure, organisms including microorganisms, xenophyophores, amphipods, and sea cucumbers thrive in the hadal zone. Expedition submersibles such as the Trieste in 1960 and the Deepsea Challenger in 2012 have successfully descended to the trench floor to map its topography and document extreme biological adaptations."
+    },
+    {
+        title: "Solar Energy & Photovoltaics",
+        text: "Solar energy is radiant light and heat from the Sun that is harnessed using a range of technologies such as solar power to generate electricity, solar thermal energy including solar water heating, and solar architecture. It is an essential source of renewable energy, and its technologies are broadly characterized as either passive solar or active solar depending on how they capture and distribute solar energy or convert it into solar power. Active solar techniques include the use of photovoltaic systems, concentrated solar power, and solar water heating to harness the energy. Passive solar techniques include orienting a building to the Sun, selecting materials with favourable thermal mass or light-dispersing properties, and designing spaces that naturally circulate air. The large magnitude of solar energy available makes it a highly appealing source of electricity. Photovoltaic solar cells convert sunlight directly into electricity by the photovoltaic effect, which generates electric current in a semiconductor material when exposed to photons of light. Rapid manufacturing advances and economies of scale have driven down the cost of photovoltaic installations dramatically, making solar generation one of the most cost-effective methods for clean power generation globally."
+    },
+    {
+        title: "Apollo 11 & The Moon Landing",
+        text: "Apollo 11 was the American spaceflight that first landed humans on the Moon. Commander Neil Armstrong and Lunar Module Pilot Buzz Aldrin landed the Apollo Lunar Module Eagle on 20 July 1969, and Armstrong became the first person to step onto the lunar surface six hours and 39 minutes later on 21 July. Aldrin joined him 19 minutes later, and they spent about two and a quarter hours together exploring the site they had named Tranquility Base upon landing. Armstrong and Aldrin collected 21.5 kilograms of lunar material to bring back to Earth as Command Module Pilot Michael Collins flew the Command Module Columbia in lunar orbit. The mission was launched by a Saturn V rocket from Kennedy Space Center on Merritt Island, Florida, on 16 July, and was the fifth crewed mission of NASA's Apollo program. Apollo 11 effectively ended the Space Race and fulfilled a national goal proposed in 1961 by President John F. Kennedy to land a man on the Moon and return him safely to the Earth before the decade was out. The event was broadcast live on worldwide television to an estimated audience of 650 million viewers, marking an unprecedented milestone in human exploration and technological achievement."
+    },
+    {
+        title: "Photosynthesis & Planetary Oxygen",
+        text: "Photosynthesis is a biological process used by plants, algae, and certain bacteria to convert light energy into chemical energy that, through cellular respiration, can later be released to fuel the organism's metabolic activities. Some of this chemical energy is stored in carbohydrate molecules, such as sugars and starches, which are synthesized from carbon dioxide and water. In most cases, oxygen is also released as a waste product. Most plants, algae, and cyanobacteria perform oxygenic photosynthesis, which is largely responsible for producing and maintaining the oxygen content of the Earth's atmosphere, and supplies most of the biological energy necessary for complex life on Earth. Although photosynthesis is performed differently by different species, the process always begins when energy from light is absorbed by proteins called reaction centres that contain green chlorophyll pigments. The emergence of photosynthetic organisms more than two billion years ago triggered the Great Oxidation Event, dramatically transforming the chemistry of Earth's atmosphere and oceans, and paving the way for the evolution of multicellular aerobic organisms across the planet."
+    },
+    {
+        title: "Bioluminescence",
+        text: "Bioluminescence is the production and emission of light by a living organism. It is a form of chemiluminescence in which energy is released by a chemical reaction in the form of light emission. Bioluminescence occurs widely in marine vertebrates and invertebrates, as well as in some fungi, microorganisms including some bioluminescent bacteria, and terrestrial arthropods such as fireflies. In a general sense, the principal chemical reaction in bioluminescence involves a light-emitting molecule and an enzyme, commonly referred to as a luciferin and a luciferase, respectively. Because these are generic names, the specific luciferins and luciferases are often distinguished by including the species or group. In all characterized cases, the enzyme catalyzes the oxidation of the luciferin, occasionally requiring other cofactors such as adenosine triphosphate or calcium ions. In deep ocean environments where sunlight cannot penetrate, bioluminescence serves essential ecological functions including counterillumination camouflage, mimicry to lure prey, communication, and warning coloration to deter deep-sea predators."
+    },
+    {
+        title: "History of Writing Systems",
+        text: "The history of writing traces the development of expressing language by systems of markings and how these markings were used for various purposes in different societies, thereby transforming social organization. Writing systems emerged in multiple different civilizations around the world, beginning in the Bronze Age. The earliest known scripts include cuneiform in ancient Mesopotamia, Egyptian hieroglyphs, the Indus script, and Chinese oracle bone script. Cuneiform, created by the Sumerians around 3400 BC, began as a system of pictograms used for recording agricultural goods and temple accounts, later evolving into a sophisticated phonetic script impressed into wet clay tablets with a reed stylus. The invention of the alphabet, where individual characters represent single phonemes rather than syllables or entire words, arose among Semitic workers in ancient Egypt around 1800 BC. This innovation was adopted and refined by the Phoenicians, whose maritime trading network distributed the alphabetic system throughout the Mediterranean basin, directly giving rise to the Greek, Latin, Cyrillic, and Arabic writing systems used across the world today."
+    },
+    {
+        title: "Antarctic Ice Sheet Dynamics",
+        text: "The Antarctic ice sheet is one of the two polar ice sheets of Earth. It covers about 98 percent of the Antarctic continent and is the largest single mass of ice on Earth. It covers an area of almost 14 million square kilometres and contains approximately 27 million cubic kilometres of ice. Around 61 percent of all fresh water on the Earth is held in the Antarctic ice sheet, which is equivalent to about 58 metres of global sea-level rise if entirely melted. The ice sheet is divided by the Transantarctic Mountains into two main sections: the larger East Antarctic Ice Sheet and the smaller West Antarctic Ice Sheet. The East Antarctic sheet rests on a major land mass, while the bed of the West Antarctic sheet is in places more than 2,500 metres below sea level. Ice moves continuously outward from the high interior plateaus toward the coast through large ice streams and glaciers, feeding floating ice shelves such as the Ross Ice Shelf and the Ronne Ice Shelf. Scientific monitoring of the ice sheet through satellite gravimetry and altimetry provides vital data on cryospheric mass balance and global ocean circulation patterns in response to modern climate change."
+    }
 ];
 
-let lastParagraphIndex = -1;
+const WIKI_TOPICS = [
+    "astronomy", "space exploration", "computer science", "ancient history",
+    "marine biology", "renewable energy", "quantum mechanics", "renaissance architecture",
+    "evolutionary biology", "neuroscience", "classical physics", "linguistics",
+    "inventions", "oceanography", "robotics", "paleontology", "particle physics"
+];
 
-function getRandomParagraph() {
+let lastFallbackIndex = -1;
+let wikiQueue = [];
+let isFetchingWiki = false;
+
+function cleanWikiText(raw) {
+    if (!raw) return "";
+    let text = raw;
+    // Remove phonetic transcriptions
+    text = text.replace(/\s*\([/\[][^)]*[/\]]\)/g, "");
+    // Remove citation markers and references
+    text = text.replace(/\[\d+\]|\[citation needed\]|\[note \d+\]/gi, "");
+    // Normalize punctuation
+    text = text.replace(/[\u2018\u2019]/g, "'");
+    text = text.replace(/[\u201C\u201D]/g, '"');
+    text = text.replace(/[\u2013\u2014]/g, "-");
+    text = text.replace(/[\u00A0\u200B]/g, " ");
+    // Keep standard ASCII printable range
+    text = text.replace(/[^\x20-\x7E]/g, "");
+    // Collapse spacing
+    text = text.replace(/\s+/g, " ");
+    return text.trim();
+}
+
+function truncateToSentence(text, minLen = 1000, maxLen = 1400) {
+    if (text.length <= maxLen && text.length >= minLen) {
+        if (text.endsWith(".")) return text;
+        const lastP = text.lastIndexOf(". ");
+        if (lastP >= minLen - 100) return text.slice(0, lastP + 1);
+    }
+
+    const searchSlice = text.slice(0, maxLen + 150);
+    const lastPeriod = searchSlice.lastIndexOf(". ");
+    if (lastPeriod >= minLen - 150) {
+        return searchSlice.slice(0, lastPeriod + 1);
+    }
+
+    const nextPeriod = text.indexOf(". ", minLen - 100);
+    if (nextPeriod !== -1 && nextPeriod <= maxLen + 250) {
+        return text.slice(0, nextPeriod + 1);
+    }
+
+    const sub = text.slice(0, maxLen);
+    const lastSpace = sub.lastIndexOf(" ");
+    return (lastSpace > minLen - 150 ? sub.slice(0, lastSpace) : sub) + ".";
+}
+
+async function refillWikiQueue() {
+    if (isFetchingWiki) return;
+    isFetchingWiki = true;
+
+    try {
+        const topic = WIKI_TOPICS[Math.floor(Math.random() * WIKI_TOPICS.length)];
+        const offset = Math.floor(Math.random() * 40);
+        const url = `https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(topic)}&gsrlimit=8&gsroffset=${offset}&prop=extracts&exintro=1&explaintext=1`;
+
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timeoutId = controller ? setTimeout(() => controller.abort(), 3500) : null;
+
+        const res = await fetch(url, {
+            signal: controller ? controller.signal : undefined,
+            headers: { 'User-Agent': 'KeyGapTypingTest/1.0' }
+        });
+        if (timeoutId) clearTimeout(timeoutId);
+
+        const data = await res.json();
+        if (data && data.query && data.query.pages) {
+            const pages = Object.values(data.query.pages);
+            for (const page of pages) {
+                const cleaned = cleanWikiText(page.extract || "");
+                if (cleaned.length >= 850) {
+                    const passage = truncateToSentence(cleaned, 1000, 1400);
+                    if (passage.length >= 950) {
+                        wikiQueue.push({
+                            title: page.title,
+                            text: passage
+                        });
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        // Silently fall back to curated offline Wikipedia passages
+    } finally {
+        isFetchingWiki = false;
+    }
+}
+
+function getRandomOfflineParagraph() {
     let index;
-    if (PARAGRAPHS.length <= 1) {
+    if (WIKI_FALLBACK_PARAGRAPHS.length <= 1) {
         index = 0;
     } else {
         do {
-            index = Math.floor(Math.random() * PARAGRAPHS.length);
-        } while (index === lastParagraphIndex);
+            index = Math.floor(Math.random() * WIKI_FALLBACK_PARAGRAPHS.length);
+        } while (index === lastFallbackIndex);
     }
-    lastParagraphIndex = index;
-    return PARAGRAPHS[index];
+    lastFallbackIndex = index;
+    return WIKI_FALLBACK_PARAGRAPHS[index];
+}
+
+function getNextPassage() {
+    if (wikiQueue.length > 0) {
+        const item = wikiQueue.shift();
+        if (wikiQueue.length < 3) {
+            refillWikiQueue();
+        }
+        return item;
+    }
+
+    // Trigger background refill for subsequent passages
+    refillWikiQueue();
+    return getRandomOfflineParagraph();
 }
 
 // Words for practice drills
@@ -176,7 +320,9 @@ const heatmapDynamicLegend = document.getElementById("heatmap-dynamic-legend");
 const layoutDropdown = document.getElementById("keyboard-layout");
 
 // ---------- State ----------
-let sentence = getRandomParagraph();
+const initialPassage = getNextPassage();
+let sentence = initialPassage.text;
+let currentArticleTitle = initialPassage.title || "Wikipedia Article";
 let currentModeName = "Untimed";
 let timerLimit = 0; // 0 = Untimed (full text accuracy check), 60 = 60s, 120 = 120s
 let currentIndex = 0;
@@ -192,8 +338,8 @@ let heatmapMetric = "error"; // "error" | "latency" | "recovery"
 // Rolling baseline speed of recent correct keystrokes
 let recentCorrectLatencies = [];
 
-// Virtualized text window state for massive text performance
-const VIRTUAL_THRESHOLD = 500;
+// Virtualized text window state for massive text performance (500k+ chars)
+const VIRTUAL_THRESHOLD = 2000;
 const WINDOW_BEFORE = 35;
 const WINDOW_AFTER = 145;
 let isVirtualized = false;
@@ -290,7 +436,9 @@ function startTest(forceNewSentence = false) {
     }
 
     if (forceNewSentence && currentModeName === "Standard") {
-        sentence = getRandomParagraph();
+        const nextP = getNextPassage();
+        sentence = nextP.text;
+        currentArticleTitle = nextP.title || "Wikipedia Article";
     }
 
     results.innerHTML = "";
@@ -318,9 +466,10 @@ function startTest(forceNewSentence = false) {
     updateModeDisplay();
 
     if (arenaStatus) {
-        arenaStatus.textContent = timerLimit > 0
-            ? `Ready. Start typing to begin the ${timerLimit}s countdown.`
-            : "Untimed Mode: Type through the passage to measure accuracy & recovery cost.";
+        const titleBadge = currentArticleTitle ? `Wikipedia: "${currentArticleTitle}"` : (currentModeName || "Passage");
+        arenaStatus.innerHTML = timerLimit > 0
+            ? `<span style="color:var(--accent-cyan); font-weight:700;">${titleBadge}</span> • Ready. Start typing to begin the ${timerLimit}s countdown.`
+            : `<span style="color:var(--accent-cyan); font-weight:700;">${titleBadge}</span> • Untimed (~${Math.round(sentence.length / 5)} words). Type to start.`;
     }
 }
 
@@ -335,9 +484,10 @@ function updateModeDisplay() {
     }
 }
 
-function setSentence(text, modeName = "Standard") {
+function setSentence(text, modeName = "Standard", articleTitle = "") {
     currentModeName = modeName;
     sentence = text;
+    currentArticleTitle = articleTitle;
     startTest(false);
 }
 
@@ -1019,7 +1169,9 @@ function showResults(isTimedOut = false) {
     showAllTime();
 
     if (currentModeName === "Standard") {
-        sentence = getRandomParagraph();
+        const nextP = getNextPassage();
+        sentence = nextP.text;
+        currentArticleTitle = nextP.title || "Wikipedia Article";
     }
 }
 
@@ -1057,9 +1209,10 @@ document.addEventListener("keydown", function (event) {
     if (startTime === null) {
         startTime = now;
         if (arenaStatus) {
-            arenaStatus.textContent = timerLimit > 0
-                ? `Timing active! ${timerLimit}s countdown running...`
-                : "Untimed mode: Testing accuracy & keystroke latency across passage...";
+            const titleBadge = currentArticleTitle ? `Wikipedia: "${currentArticleTitle}"` : (currentModeName || "Active Test");
+            arenaStatus.innerHTML = timerLimit > 0
+                ? `<span style="color:var(--accent-cyan); font-weight:700;">${titleBadge}</span> • Timing active! ${timerLimit}s countdown running...`
+                : `<span style="color:var(--accent-cyan); font-weight:700;">${titleBadge}</span> • Measuring accuracy & keystroke latency across passage...`;
         }
         liveInterval = setInterval(updateLiveHud, 100);
     }
@@ -1302,23 +1455,26 @@ if (restartBtn) {
 
 if (refreshTextBtn) {
     refreshTextBtn.addEventListener("click", function () {
-        setSentence(getRandomParagraph(), "Standard");
+        const nextP = getNextPassage();
+        setSentence(nextP.text, "Standard", nextP.title);
         refreshTextBtn.blur();
     });
 }
 
 if (defaultBtn) {
     defaultBtn.addEventListener("click", function () {
+        const nextP = getNextPassage();
         setTimerMode(0, modeUntimedBtn);
-        setSentence(getRandomParagraph(), "Standard");
+        setSentence(nextP.text, "Standard", nextP.title);
         defaultBtn.blur();
     });
 }
 
 if (default60sBtn) {
     default60sBtn.addEventListener("click", function () {
+        const nextP = getNextPassage();
         setTimerMode(60, mode60sBtn);
-        setSentence(getRandomParagraph(), "60s Timed");
+        setSentence(nextP.text, "60s Timed", nextP.title);
         default60sBtn.blur();
     });
 }
@@ -1329,7 +1485,7 @@ if (practiceBtn) {
         if (text === null) {
             alert(`No weak keys identified yet. Complete test rounds until keys have at least ${MIN_PRACTICE} attempts!`);
         } else {
-            setSentence(text, "Weak-Key Drill");
+            setSentence(text, "Weak-Key Drill", "Targeted Weak-Key Drill");
         }
         practiceBtn.blur();
     });
@@ -1366,7 +1522,7 @@ function loadCustomText(targetTimerSeconds, activeSegmentBtn) {
     }
 
     const modeLabel = timerLimit > 0 ? `Custom (${timerLimit}s)` : "Custom (Untimed)";
-    setSentence(text, modeLabel);
+    setSentence(text, modeLabel, "Custom Passage");
     textbox.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
@@ -1402,6 +1558,7 @@ if (customBox && charCounter) {
 // =====================================================
 // Initialization
 // =====================================================
+refillWikiQueue(); // Asynchronously pre-fetch Wikipedia articles into queue
 startTest(false);
 updateHeatmapControls();
 showAllTime();
