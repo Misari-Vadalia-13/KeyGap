@@ -1,0 +1,12 @@
+body {
+
+    font-family: monospace;
+    font-size: 28px;
+    padding: 40px;
+
+}
+
+#text span {
+
+    color: gray;
+}
