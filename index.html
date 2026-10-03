@@ -1,15 +1,52 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KeyGap</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
     <h1>KeyGap</h1>
+    <p class="tagline">Find the keys that slow you down. Everything stays in your browser.</p>
+
+    <!-- The test -->
     <div id="text"></div>
+    <div id="results" class="info"></div>
+    <div id="weak" class="info"></div>
+
+    <div class="buttons">
+        <button id="restart">Restart</button>
+        <button id="default-text">Default text</button>
+        <button id="practice">Practice my weak keys</button>
+    </div>
+
+    <!-- Phase 8: your own text -->
+    <h2>Practice with your own text</h2>
+    <textarea id="custom"
+        placeholder="Paste code or writing here (only the first 300 typeable characters are used)"></textarea>
+    <div class="buttons">
+        <button id="use-custom">Start with my text</button>
+    </div>
+
+    <!-- Saved stats -->
+    <h2>All-time stats</h2>
+    <div id="alltime" class="info"></div>
+
+    <!-- Phase 9: recovery cost -->
+    <div id="recovery" class="info"></div>
+
+    <!-- Phase 10: keyboard heatmap -->
+    <h2>Keyboard heatmap</h2>
+    <p class="legend">Green = few mistakes, red = many mistakes, gray = not enough data yet</p>
+    <div id="keyboard"></div>
+
+    <div class="buttons">
+        <button id="reset-stats">Reset my stats</button>
+    </div>
+
     <script src="script.js"></script>
 </body>
 

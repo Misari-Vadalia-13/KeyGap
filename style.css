@@ -1,12 +1,116 @@
+/* ---------- Page ---------- */
 body {
-
     font-family: monospace;
     font-size: 28px;
     padding: 40px;
+    max-width: 900px;
+    margin: 0 auto;
+    background: #fafafa;
+    color: #222;
+}
 
+h1 {
+    margin-bottom: 4px;
+}
+
+h2 {
+    font-size: 22px;
+    margin-top: 40px;
+    margin-bottom: 10px;
+}
+
+.tagline {
+    font-size: 16px;
+    color: #666;
+    margin-top: 0;
+}
+
+/* ---------- The typing text (Phases 1-3) ---------- */
+#text {
+    line-height: 1.5;
+    margin: 30px 0 10px;
 }
 
 #text span {
-
     color: gray;
+}
+
+#text span.correct {
+    color: green;
+}
+
+#text span.wrong {
+    background-color: #ffb3b3;
+}
+
+#text span.current {
+    border-bottom: 2px solid black;
+}
+
+/* ---------- Result boxes (Phases 4-7, 9) ---------- */
+.info {
+    font-size: 18px;
+    margin-top: 16px;
+    white-space: pre-line;
+}
+
+#results {
+    font-size: 24px;
+    min-height: 32px;
+    margin-top: 24px;
+}
+
+/* ---------- Buttons ---------- */
+button {
+    font-family: monospace;
+    font-size: 16px;
+    padding: 8px 16px;
+    margin: 12px 8px 0 0;
+    cursor: pointer;
+}
+
+/* ---------- Phase 8: textarea ---------- */
+textarea {
+    width: 100%;
+    height: 90px;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 16px;
+    padding: 10px;
+}
+
+/* ---------- Phase 10: keyboard heatmap ---------- */
+.legend {
+    font-size: 14px;
+    color: #666;
+    margin-top: 0;
+}
+
+.kb-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.kb-key {
+    width: 42px;
+    height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    border-radius: 6px;
+    background: #eee;
+    color: #222;
+    border: 1px solid #ccc;
+    cursor: default;
+}
+
+.kb-key.nodata {
+    background: #ddd;
+    color: #888;
+}
+
+.kb-key.space {
+    width: 260px;
 }
