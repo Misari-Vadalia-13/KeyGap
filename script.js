@@ -1,21 +1,75 @@
 // ===================================================================
-// KeyGap — script.js (Keystroke Intelligence Engine)
+// KeyGap — script.js (Keystroke Intelligence & Recovery Engine)
 // ===================================================================
 
-// ---------- Settings ----------
+// ---------- Settings & Smoothing Constants ----------
 const MIN_CUSTOM_LENGTH = 5;     // shortest custom text we accept
-const MIN_ROUND = 2;             // tries a key needs to be ranked in one round
-const MIN_ALL_TIME = 10;         // tries a key needs to be ranked in all-time stats
-const MIN_PRACTICE = 3;          // tries a key needs to be used for practice text
-const MIN_HEAT = 3;              // tries a key needs to get a color on the keyboard
-const RECOVERY_WINDOW = 3;       // how many keys after a mistake we look at
-const MAX_LATENCY = 2000;        // ignore pauses longer than this (ms)
-const MIN_MISTAKES = 10;         // mistakes needed before showing recovery cost
+const MIN_ROUND = 5;             // minimum tries for a key to be ranked in one round
+const MIN_ALL_TIME = 20;         // minimum tries for a key to be ranked in all-time stats
+const MIN_PRACTICE = 5;          // tries a key needs to be included in practice drills
+const MIN_HEAT = 5;              // tries a key needs before receiving a heatmap color
+const MIN_HEAT_ALL = 15;         // tries needed for all-time heatmap calibration
+const RECOVERY_LOOKAHEAD = 5;    // max keystrokes monitored to measure post-mistake recovery
+const BASELINE_WINDOW = 5;       // rolling window of recent correct keystrokes to compute baseline speed
+const MAX_LATENCY = 2000;        // ignore pauses longer than this (ms) - user looked away
+const MIN_MISTAKES = 5;          // mistakes needed before displaying recovery cost
 
+// Bayesian / Laplace smoothing priors for error rate: (misses + ALPHA) / (attempts + BETA)
+const SMOOTH_ALPHA = 1;
+const SMOOTH_BETA = 10;
+
+// Storage Keys
 const STORAGE_KEY = "keygap-stats";
 const RECOVERY_KEY = "keygap-recovery";
+const RECOVERY_BY_KEY = "keygap-recovery-by-key";
+const LATENCY_KEY = "keygap-latency";
+const LAYOUT_KEY = "keygap-layout";
+const SCHEMA_VERSION = 1;
 
-// ---------- Rich Paragraph Pool (Longer, non-repeating passages) ----------
+// In-memory fallback if localStorage is blocked or full
+let memoryStorage = {};
+let storageAlertShown = false;
+
+function safeGet(key, defaultVal) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (raw === null) return defaultVal;
+        return JSON.parse(raw) ?? defaultVal;
+    } catch (e) {
+        showStorageWarning();
+        return memoryStorage[key] ?? defaultVal;
+    }
+}
+
+function safeSet(key, value) {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) {
+        showStorageWarning();
+        memoryStorage[key] = value;
+    }
+}
+
+function showStorageWarning() {
+    if (storageAlertShown) return;
+    storageAlertShown = true;
+    const alertBox = document.getElementById("storage-alert");
+    if (alertBox) {
+        alertBox.style.display = "flex";
+    }
+}
+
+// ---------- Keyboard Physical Layout Definitions ----------
+const LAYOUTS = {
+    qwerty: ["1234567890-=", "qwertyuiop[]", "asdfghjkl;'", "zxcvbnm,./"],
+    dvorak: ["1234567890[]", "',.pyfgcrl/=", "aoeuidhtns-", ";qjkxbwmvz"],
+    colemak: ["1234567890-=", "qwfpgjluy;[]", "arstdhneio'", "zxcvbkm,./"]
+};
+
+let currentLayout = safeGet(LAYOUT_KEY, "qwerty");
+if (!LAYOUTS[currentLayout]) currentLayout = "qwerty";
+
+// ---------- Rich Paragraph Pool ----------
 const PARAGRAPHS = [
     "The craft of software development is not merely about writing code that machines can execute, but designing resilient architectures that other humans can comprehend, maintain, and build upon with enduring confidence.",
     "Deep focus has become the rarest superpower of our modern digital era. When you ruthlessly eliminate external distractions, your mind enters a frictionless state of flow where complex engineering hurdles yield to crystal clarity.",
@@ -45,7 +99,7 @@ function getRandomParagraph() {
     return PARAGRAPHS[index];
 }
 
-// Curated words used to build dynamic weak-key practice drills
+// Words for practice drills
 const WORDS = [
     "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog",
     "about", "after", "again", "always", "because", "before", "between",
@@ -64,18 +118,18 @@ const WORDS = [
     "danger", "freedom", "gravity", "helmet", "kingdom", "ladder", "mirror"
 ];
 
-// Standard QWERTY physical keyboard rows
-const KEY_ROWS = ["1234567890-=", "qwertyuiop[]", "asdfghjkl;'", "zxcvbnm,./"];
-
-// ---------- Page DOM Elements ----------
+// ---------- DOM Elements ----------
 const textbox = document.getElementById("text");
 const results = document.getElementById("results");
+const recoveryBox = document.getElementById("recovery");
 const weakBox = document.getElementById("weak");
 const allTimeBox = document.getElementById("alltime");
-const recoveryBox = document.getElementById("recovery");
+const latencyRankBox = document.getElementById("latency-rank");
 const keyboardBox = document.getElementById("keyboard");
 const customBox = document.getElementById("custom");
 const charCounter = document.getElementById("char-counter");
+const largeTextAlert = document.getElementById("large-text-alert");
+const largeTextMsg = document.getElementById("large-text-msg");
 
 // Live HUD Elements
 const hudWpm = document.getElementById("hud-wpm");
@@ -93,19 +147,32 @@ const refreshTextBtn = document.getElementById("refresh-text");
 const useCustomBtn = document.getElementById("use-custom");
 const customUntimedBtn = document.getElementById("custom-untimed");
 const custom60sBtn = document.getElementById("custom-60s");
-const resetBtn = document.getElementById("reset-stats");
 
-// Mode / Timer Segmented Buttons
+// Data Management Buttons
+const resetBtn = document.getElementById("reset-stats");
+const exportBtn = document.getElementById("export-stats");
+const importBtn = document.getElementById("import-stats");
+const importFileInput = document.getElementById("import-file");
+const dismissStorageAlertBtn = document.getElementById("dismiss-storage-alert");
+
+// Mode & Timer Segmented Controls
 const modeUntimedBtn = document.getElementById("mode-untimed");
 const mode60sBtn = document.getElementById("mode-60s");
 const mode120sBtn = document.getElementById("mode-120s");
 const segmentBtns = [modeUntimedBtn, mode60sBtn, mode120sBtn];
 
+// Heatmap Mode & Layout Selectors
+const heatModeErrorBtn = document.getElementById("heat-mode-error");
+const heatModeLatencyBtn = document.getElementById("heat-mode-latency");
+const heatModeRecoveryBtn = document.getElementById("heat-mode-recovery");
+const heatmapDescNote = document.getElementById("heatmap-desc-note");
+const heatmapDynamicLegend = document.getElementById("heatmap-dynamic-legend");
+const layoutDropdown = document.getElementById("keyboard-layout");
+
 // ---------- State ----------
 let sentence = getRandomParagraph();
-let currentModeName = "Standard";
+let currentModeName = "Untimed";
 let timerLimit = 0; // 0 = Untimed (full text accuracy check), 60 = 60s, 120 = 120s
-let letters = [];
 let currentIndex = 0;
 let startTime = null;
 let totalPresses = 0;
@@ -114,6 +181,98 @@ let records = [];
 let lastKeyTime = null;
 let liveInterval = null;
 let isTestActive = false;
+let heatmapMetric = "error"; // "error" | "latency" | "recovery"
+
+// Rolling baseline speed of recent correct keystrokes
+let recentCorrectLatencies = [];
+
+// Virtualized text window state for massive text performance
+const VIRTUAL_THRESHOLD = 500;
+const WINDOW_BEFORE = 35;
+const WINDOW_AFTER = 145;
+let isVirtualized = false;
+let windowStartIndex = 0;
+let windowEndIndex = 0;
+
+// =====================================================
+// Text Rendering (Virtualized Sliding Window for 500k+ Chars)
+// =====================================================
+function renderTextDisplay() {
+    isVirtualized = sentence.length > VIRTUAL_THRESHOLD;
+
+    if (largeTextAlert) {
+        if (isVirtualized) {
+            largeTextAlert.style.display = "flex";
+            if (largeTextMsg) {
+                largeTextMsg.textContent = `Large text (${sentence.length.toLocaleString()} characters). Virtualized 180-character sliding buffer active for 60fps typing.`;
+            }
+        } else {
+            largeTextAlert.style.display = "none";
+        }
+    }
+
+    if (!isVirtualized) {
+        // Direct full DOM render for normal passages
+        windowStartIndex = 0;
+        windowEndIndex = sentence.length;
+        textbox.innerHTML = "";
+        for (let i = 0; i < sentence.length; i++) {
+            const letter = document.createElement("span");
+            letter.textContent = sentence[i];
+            textbox.appendChild(letter);
+        }
+    } else {
+        // Sliding window render
+        renderSlidingWindow();
+    }
+}
+
+function renderSlidingWindow() {
+    const start = Math.max(0, currentIndex - WINDOW_BEFORE);
+    const end = Math.min(sentence.length, start + WINDOW_BEFORE + WINDOW_AFTER);
+    windowStartIndex = start;
+    windowEndIndex = end;
+
+    textbox.innerHTML = "";
+
+    if (start > 0) {
+        const prefix = document.createElement("span");
+        prefix.style.color = "var(--text-muted)";
+        prefix.style.fontSize = "16px";
+        prefix.textContent = `... [${start} chars prior] `;
+        textbox.appendChild(prefix);
+    }
+
+    for (let i = start; i < end; i++) {
+        const letter = document.createElement("span");
+        letter.textContent = sentence[i];
+        if (i < currentIndex) {
+            letter.className = "correct";
+        }
+        textbox.appendChild(letter);
+    }
+
+    if (end < sentence.length) {
+        const suffix = document.createElement("span");
+        suffix.style.color = "var(--text-muted)";
+        suffix.style.fontSize = "16px";
+        suffix.textContent = ` ... [${(sentence.length - end).toLocaleString()} more]`;
+        textbox.appendChild(suffix);
+    }
+
+    updateSpanCursor();
+}
+
+function updateSpanCursor() {
+    const spans = textbox.querySelectorAll("span:not([style*='font-size'])");
+    spans.forEach(s => s.classList.remove("current"));
+
+    const localIndex = currentIndex - windowStartIndex;
+    if (localIndex >= 0 && localIndex < spans.length) {
+        spans[localIndex].classList.add("current");
+        spans[localIndex].scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+}
 
 // =====================================================
 // Setting up a test
@@ -124,52 +283,38 @@ function startTest(forceNewSentence = false) {
         liveInterval = null;
     }
 
-    // If forced or if previous test completed in Standard mode, load a fresh new paragraph
     if (forceNewSentence && currentModeName === "Standard") {
         sentence = getRandomParagraph();
     }
 
-    textbox.innerHTML = "";
     results.innerHTML = "";
-    weakBox.innerHTML = "<span style='color:var(--text-muted);'>Complete a test round to view your weakest keys for this session.</span>";
+    weakBox.innerHTML = "<span style='color:var(--text-muted);'>Complete a test round to view your weakest keys.</span>";
 
-    for (let i = 0; i < sentence.length; i++) {
-        const letter = document.createElement("span");
-        letter.textContent = sentence[i];
-        textbox.appendChild(letter);
-    }
-
-    letters = textbox.querySelectorAll("span");
     currentIndex = 0;
     startTime = null;
     totalPresses = 0;
     wrongPresses = 0;
     records = [];
     lastKeyTime = null;
+    recentCorrectLatencies = [];
     isTestActive = true;
 
-    if (letters.length > 0) {
-        letters[0].classList.add("current");
-    }
+    renderTextDisplay();
+    updateSpanCursor();
 
     // Reset HUD
     if (hudWpm) hudWpm.textContent = "0";
     if (hudAcc) hudAcc.innerHTML = "100<small>%</small>";
     if (hudTime) {
         hudTime.classList.remove("time-warning");
-        if (timerLimit > 0) {
-            hudTime.innerHTML = `${timerLimit}.0<small>s</small>`;
-        } else {
-            hudTime.innerHTML = "0.0<small>s</small>";
-        }
+        hudTime.innerHTML = timerLimit > 0 ? `${timerLimit}.0<small>s</small>` : "0.0<small>s</small>";
     }
     updateModeDisplay();
+
     if (arenaStatus) {
-        if (timerLimit > 0) {
-            arenaStatus.textContent = `Ready. Start typing to initiate the ${timerLimit}s countdown timer.`;
-        } else {
-            arenaStatus.textContent = "Untimed Mode: Type through the entire passage to evaluate your accuracy.";
-        }
+        arenaStatus.textContent = timerLimit > 0
+            ? `Ready. Start typing to begin the ${timerLimit}s countdown.`
+            : "Untimed Mode: Type through the passage to measure accuracy & recovery cost.";
     }
 }
 
@@ -180,7 +325,7 @@ function updateModeDisplay() {
     } else if (timerLimit === 120) {
         hudMode.textContent = "120s Timed";
     } else {
-        hudMode.textContent = currentModeName === "Standard" ? "Untimed" : currentModeName;
+        hudMode.textContent = currentModeName;
     }
 }
 
@@ -190,14 +335,13 @@ function setSentence(text, modeName = "Standard") {
     startTest(false);
 }
 
-// Live timer tick for real-time HUD responsiveness
+// Live timer tick for real-time HUD updates
 function updateLiveHud() {
     if (!startTime || !isTestActive) return;
     const now = Date.now();
     const elapsedSeconds = (now - startTime) / 1000;
     const minutes = elapsedSeconds / 60;
-    
-    // Live WPM based on characters typed so far
+
     const wpm = minutes > 0.005 ? Math.max(0, Math.round((currentIndex / 5) / minutes)) : 0;
     const accuracy = totalPresses > 0 ? Math.round(((totalPresses - wrongPresses) / totalPresses) * 100) : 100;
 
@@ -214,11 +358,8 @@ function updateLiveHud() {
                 hudTime.classList.remove("time-warning");
             }
         }
-
-        // Time up check
         if (remaining <= 0) {
             showResults(true); // Timed out
-            return;
         }
     } else {
         if (hudTime) {
@@ -228,58 +369,46 @@ function updateLiveHud() {
 }
 
 // =====================================================
-// Saving and loading (localStorage)
+// Data Persistence (Robust LocalStorage & Fallback)
 // =====================================================
 function loadStats() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw === null) return {};
-        return JSON.parse(raw) || {};
-    } catch (error) {
-        return {};
-    }
+    return safeGet(STORAGE_KEY, {});
 }
 
 function saveStats(stats) {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
-    } catch (error) {
-        console.warn("Could not save stats:", error);
-    }
+    safeSet(STORAGE_KEY, stats);
 }
 
 function emptyRecovery() {
-    return { afterSum: 0, afterCount: 0, normalSum: 0, normalCount: 0, mistakes: 0 };
+    return { totalLostMs: 0, mistakes: 0, baselineSum: 0, baselineCount: 0 };
 }
 
 function loadRecovery() {
-    const data = emptyRecovery();
-    try {
-        const raw = localStorage.getItem(RECOVERY_KEY);
-        if (raw !== null) {
-            const parsed = JSON.parse(raw);
-            for (const field in data) {
-                if (typeof parsed[field] === "number") {
-                    data[field] = parsed[field];
-                }
-            }
-        }
-    } catch (error) {
-        // damaged data fallback
-    }
-    return data;
+    return safeGet(RECOVERY_KEY, emptyRecovery());
 }
 
 function saveRecovery(data) {
-    try {
-        localStorage.setItem(RECOVERY_KEY, JSON.stringify(data));
-    } catch (error) {
-        console.warn("Could not save recovery data:", error);
-    }
+    safeSet(RECOVERY_KEY, data);
+}
+
+function loadRecoveryByKey() {
+    return safeGet(RECOVERY_BY_KEY, {});
+}
+
+function saveRecoveryByKey(data) {
+    safeSet(RECOVERY_BY_KEY, data);
+}
+
+function loadLatency() {
+    return safeGet(LATENCY_KEY, {});
+}
+
+function saveLatency(data) {
+    safeSet(LATENCY_KEY, data);
 }
 
 // =====================================================
-// Weak keys analysis
+// Statistical Noise Fix: Bayesian/Laplace Weak-Key Ranking
 // =====================================================
 function countKeys(list) {
     const stats = {};
@@ -307,35 +436,43 @@ function addStats(saved, fresh) {
     return saved;
 }
 
+// Applies Laplace/Bayesian smoothing: (misses + ALPHA) / (attempts + BETA)
 function rankWeakKeys(stats, minAttempts) {
     const list = [];
     for (const key in stats) {
         if (stats[key].attempts >= minAttempts && stats[key].misses > 0) {
+            const rawRate = stats[key].misses / stats[key].attempts;
+            // Bayesian smoothed rate prevents a 1/2 from beating a 9/30
+            const smoothedRate = (stats[key].misses + SMOOTH_ALPHA) / (stats[key].attempts + SMOOTH_BETA);
             list.push({
                 key: key,
                 attempts: stats[key].attempts,
                 misses: stats[key].misses,
-                rate: stats[key].misses / stats[key].attempts
+                rate: rawRate,
+                smoothedRate: smoothedRate
             });
         }
     }
 
-    list.sort((a, b) => b.rate - a.rate);
+    // Sort by smoothed rate descending
+    list.sort((a, b) => b.smoothedRate - a.smoothedRate);
     return list.slice(0, 5);
 }
 
-// Render formatted badges for weakest keys
-function renderWeakKeysHtml(weak) {
+function renderWeakKeysHtml(weak, emptyMsg) {
+    if (weak.length === 0) {
+        return `<span style="color:var(--accent-emerald);">${emptyMsg}</span>`;
+    }
+
     let html = '<div class="stat-pill-list">';
     for (let i = 0; i < weak.length; i++) {
-        let name = weak[i].key;
-        if (name === " ") name = "␣ Space";
+        let name = weak[i].key === " " ? "␣ Space" : weak[i].key;
         const percent = Math.round(weak[i].rate * 100);
         html += `
             <div class="stat-pill-item">
                 <span class="key-badge">${name}</span>
                 <span class="stat-rate">${percent}% error</span>
-                <span class="stat-sub">${weak[i].misses} misses / ${weak[i].attempts} tries</span>
+                <span class="stat-sub">${weak[i].misses} misses in ${weak[i].attempts} attempts</span>
             </div>
         `;
     }
@@ -345,167 +482,325 @@ function renderWeakKeysHtml(weak) {
 
 function showRoundWeakKeys(roundStats) {
     const weak = rankWeakKeys(roundStats, MIN_ROUND);
-
-    if (weak.length === 0) {
-        weakBox.innerHTML = "<span style='color:var(--accent-emerald);'>Outstanding accuracy! No weak keys identified this round.</span>";
-        return;
-    }
-    weakBox.innerHTML = renderWeakKeysHtml(weak);
+    weakBox.innerHTML = renderWeakKeysHtml(
+        weak,
+        `No weak keys met the ${MIN_ROUND}-attempt threshold with mistakes this round.`
+    );
 }
 
 // =====================================================
-// Recovery cost calculation (Mistake Latency)
+// Headline Feature: Recovery Cost (Hesitation Latency)
 // =====================================================
 function measureRecovery(list) {
-    const marked = new Array(list.length).fill(false);
+    const roundByKey = {};
+    let totalLostMs = 0;
     let mistakes = 0;
+    let baselineSum = 0;
+    let baselineCount = 0;
 
-    // Mark the keys that follow immediately after a mistake
+    for (let i = 0; i < list.length; i++) {
+        if (list[i].correct && list[i].latency !== null && list[i].latency <= MAX_LATENCY) {
+            baselineSum += list[i].latency;
+            baselineCount++;
+        }
+    }
+
+    const avgBaseline = baselineCount > 0 ? (baselineSum / baselineCount) : 220;
+
     for (let i = 0; i < list.length; i++) {
         if (!list[i].correct) {
             mistakes++;
-            for (let j = i + 1; j <= i + RECOVERY_WINDOW && j < list.length; j++) {
-                marked[j] = true;
+            const mistypedKey = list[i].expected;
+            if (!roundByKey[mistypedKey]) {
+                roundByKey[mistypedKey] = { totalLostMs: 0, count: 0 };
             }
+
+            let extraLost = 0;
+            // Measure until keystroke speed returns to baseline or max lookahead
+            for (let j = i + 1; j <= i + RECOVERY_LOOKAHEAD && j < list.length; j++) {
+                const t = list[j].latency;
+                if (t === null || t > MAX_LATENCY) continue;
+
+                if (t > avgBaseline) {
+                    extraLost += (t - avgBaseline);
+                }
+                // Stopped hesitating once keystroke reaches baseline pace
+                if (t <= avgBaseline * 1.15) break;
+            }
+
+            totalLostMs += extraLost;
+            roundByKey[mistypedKey].totalLostMs += extraLost;
+            roundByKey[mistypedKey].count++;
         }
     }
 
-    const data = emptyRecovery();
-    data.mistakes = mistakes;
-
-    for (let i = 0; i < list.length; i++) {
-        const t = list[i].latency;
-        if (t === null || t > MAX_LATENCY) continue;
-
-        if (marked[i]) {
-            data.afterSum += t;
-            data.afterCount++;
-        } else if (list[i].correct) {
-            data.normalSum += t;
-            data.normalCount++;
-        }
-    }
-    return data;
+    return {
+        totals: { totalLostMs, mistakes, baselineSum, baselineCount },
+        byKey: roundByKey
+    };
 }
 
 function addRecovery(saved, fresh) {
-    for (const field in saved) {
-        saved[field] += fresh[field];
+    return {
+        totalLostMs: saved.totalLostMs + fresh.totalLostMs,
+        mistakes: saved.mistakes + fresh.mistakes,
+        baselineSum: saved.baselineSum + fresh.baselineSum,
+        baselineCount: saved.baselineCount + fresh.baselineCount
+    };
+}
+
+function addRecoveryByKey(saved, fresh) {
+    for (const key in fresh) {
+        if (!saved[key]) {
+            saved[key] = { totalLostMs: 0, count: 0 };
+        }
+        saved[key].totalLostMs += fresh[key].totalLostMs;
+        saved[key].count += fresh[key].count;
     }
     return saved;
 }
 
 function showRecovery() {
     const d = loadRecovery();
+    const byKey = loadRecoveryByKey();
 
     if (d.mistakes < MIN_MISTAKES) {
         recoveryBox.innerHTML = `
-            <div style="padding: 8px 0; color: var(--text-muted);">
-                Calibrating recovery metrics...<br>
-                Requires <strong>${MIN_MISTAKES}</strong> mistakes to accurately compute hesitation delay.<br>
+            <div style="padding: 10px 0; color: var(--text-muted);">
+                Calibrating baseline recovery data...<br>
+                Requires <strong>${MIN_MISTAKES}</strong> logged mistakes to reliably calculate hesitation cost.<br>
                 Progress: <strong style="color:var(--accent-cyan);">${d.mistakes} / ${MIN_MISTAKES}</strong> mistakes logged.
             </div>
         `;
         return;
     }
 
-    if (d.afterCount === 0 || d.normalCount === 0) {
-        recoveryBox.innerHTML = "<span style='color:var(--text-muted);'>Not enough timing data recorded yet.</span>";
-        return;
+    const avgBaseline = d.baselineCount > 0 ? (d.baselineSum / d.baselineCount) : 220;
+    const avgLostPerMistake = d.totalLostMs / d.mistakes;
+
+    // Rank keys that trigger the greatest recovery hesitation
+    const worstKeys = [];
+    for (const k in byKey) {
+        if (byKey[k].count >= 2 && byKey[k].totalLostMs > 0) {
+            worstKeys.push({
+                key: k,
+                avgLost: byKey[k].totalLostMs / byKey[k].count,
+                count: byKey[k].count
+            });
+        }
     }
+    worstKeys.sort((a, b) => b.avgLost - a.avgLost);
 
-    const afterAvg = d.afterSum / d.afterCount;
-    const normalAvg = d.normalSum / d.normalCount;
-    const diff = afterAvg - normalAvg;
-
-    if (diff <= 0) {
-        recoveryBox.innerHTML = `
-            <div class="stat-pill-list">
-                <div class="stat-pill-item">
-                    <span>Average Keystroke</span>
-                    <strong style="color:var(--accent-cyan);">${Math.round(normalAvg)} ms</strong>
+    let worstKeySnippet = "";
+    if (worstKeys.length > 0) {
+        const top = worstKeys.slice(0, 3);
+        worstKeySnippet = `
+            <div style="margin-top: 14px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">
+                    Top Hesitation Triggers (Highest delay after typo):
                 </div>
-                <div class="stat-pill-item">
-                    <span>Post-Mistake Keystroke</span>
-                    <strong style="color:var(--accent-emerald);">${Math.round(afterAvg)} ms</strong>
+                <div class="stat-pill-list">
+                    ${top.map(item => `
+                        <div class="stat-pill-item">
+                            <span class="key-badge recovery-badge">${item.key === " " ? "␣ Space" : item.key}</span>
+                            <span class="stat-rate" style="color:var(--accent-rose);">+${Math.round(item.avgLost)} ms lost</span>
+                            <span class="stat-sub">${item.count} errors analyzed</span>
+                        </div>
+                    `).join("")}
                 </div>
             </div>
-            <p style="margin-top: 10px; color: var(--accent-emerald); font-size: 12px;">
-                ✓ Flawless recovery! You do not hesitate after mistakes.
-            </p>
         `;
-        return;
     }
-
-    const lostPerMistake = (diff * d.afterCount) / d.mistakes / 1000;
 
     recoveryBox.innerHTML = `
         <div class="stat-pill-list">
-            <div class="stat-pill-item">
-                <span>Normal Pace</span>
-                <strong style="color:var(--accent-cyan);">${Math.round(normalAvg)} ms</strong>
+            <div class="stat-pill-item" style="background: rgba(99, 102, 241, 0.12); border-color: rgba(99, 102, 241, 0.35);">
+                <div>
+                    <span style="font-weight: 700; color: #ffffff;">Average Recovery Penalty</span>
+                    <div style="font-size: 12px; color: #a5b4fc;">Extra delay after every mistake before returning to baseline</div>
+                </div>
+                <strong style="color:var(--accent-rose); font-size: 18px;">+${Math.round(avgLostPerMistake)} ms / typo</strong>
             </div>
             <div class="stat-pill-item">
-                <span>Post-Mistake Pace</span>
-                <strong style="color:var(--accent-rose);">${Math.round(afterAvg)} ms (+${Math.round(diff)}ms)</strong>
-            </div>
-            <div class="stat-pill-item" style="border-color: rgba(251, 113, 133, 0.3); background: rgba(251, 113, 133, 0.08);">
-                <span>Penalty per Mistake</span>
-                <strong style="color:var(--accent-rose); font-size: 15px;">~${lostPerMistake.toFixed(2)}s lost</strong>
+                <span>Baseline Typing Cadence (Rolling median of correct keystrokes)</span>
+                <strong style="color:var(--accent-cyan); font-size: 15px;">${Math.round(avgBaseline)} ms / key</strong>
             </div>
         </div>
+        ${worstKeySnippet}
     `;
 }
 
 // =====================================================
-// Keyboard Heatmap
+// Feature: Per-Key Latency Tracking & Ranking
 // =====================================================
-function makeKeyElement(key, saved) {
+function countLatency(list) {
+    const fresh = {};
+    for (let i = 0; i < list.length; i++) {
+        if (list[i].correct && list[i].latency !== null && list[i].latency <= MAX_LATENCY) {
+            const key = list[i].expected;
+            if (!fresh[key]) {
+                fresh[key] = { totalMs: 0, count: 0 };
+            }
+            fresh[key].totalMs += list[i].latency;
+            fresh[key].count++;
+        }
+    }
+    return fresh;
+}
+
+function addLatency(saved, fresh) {
+    for (const key in fresh) {
+        if (!saved[key]) {
+            saved[key] = { totalMs: 0, count: 0 };
+        }
+        saved[key].totalMs += fresh[key].totalMs;
+        saved[key].count += fresh[key].count;
+    }
+    return saved;
+}
+
+function showLatencyRank() {
+    const latStats = loadLatency();
+    const ranked = [];
+
+    for (const k in latStats) {
+        if (latStats[k].count >= 10) {
+            ranked.push({
+                key: k,
+                avgMs: latStats[k].totalMs / latStats[k].count,
+                count: latStats[k].count
+            });
+        }
+    }
+
+    ranked.sort((a, b) => b.avgMs - a.avgMs);
+
+    if (ranked.length === 0) {
+        latencyRankBox.innerHTML = `
+            <div style="color: var(--text-muted); padding: 8px 0;">
+                Calibrating speed metrics...<br>
+                Requires at least <strong>10</strong> correct keystrokes per key.
+            </div>
+        `;
+        return;
+    }
+
+    const topSlow = ranked.slice(0, 5);
+    let html = '<div class="stat-pill-list">';
+    for (let i = 0; i < topSlow.length; i++) {
+        const name = topSlow[i].key === " " ? "␣ Space" : topSlow[i].key;
+        html += `
+            <div class="stat-pill-item">
+                <span class="key-badge latency-badge">${name}</span>
+                <span class="stat-rate" style="color:var(--accent-cyan);">${Math.round(topSlow[i].avgMs)} ms</span>
+                <span class="stat-sub">${topSlow[i].count} correct samples</span>
+            </div>
+        `;
+    }
+    html += '</div>';
+    latencyRankBox.innerHTML = html;
+}
+
+// =====================================================
+// Keyboard Heatmap (Error Rate, Latency & Recovery Modes)
+// =====================================================
+function makeKeyElement(key, savedStats, savedLatency, savedRecoveryByKey) {
     const el = document.createElement("div");
     el.className = "kb-key";
     el.textContent = key === " " ? "space" : key;
 
     const names = [key];
-    if (key.toUpperCase() !== key) {
-        names.push(key.toUpperCase());
-    }
+    if (key.toUpperCase() !== key) names.push(key.toUpperCase());
 
+    // Aggregate attempts and misses across case variants
     let attempts = 0;
     let misses = 0;
+    let totalLatencyMs = 0;
+    let latencyCount = 0;
+    let recoveryPenaltyMs = 0;
+    let recoveryCount = 0;
+
     for (let i = 0; i < names.length; i++) {
-        const s = saved[names[i]];
-        if (s !== undefined) {
+        const s = savedStats[names[i]];
+        if (s) {
             attempts += s.attempts;
             misses += s.misses;
         }
+        const l = savedLatency[names[i]];
+        if (l) {
+            totalLatencyMs += l.totalMs;
+            latencyCount += l.count;
+        }
+        const r = savedRecoveryByKey[names[i]];
+        if (r) {
+            recoveryPenaltyMs += r.totalLostMs;
+            recoveryCount += r.count;
+        }
     }
 
-    if (attempts < MIN_HEAT) {
-        el.classList.add("nodata");
-        el.title = `Key: '${key}' (Needs at least ${MIN_HEAT} attempts)`;
-    } else {
-        const rate = misses / attempts;
-        // 0% error = hue 120 (emerald green), 30%+ error = hue 0 (crimson red)
-        const hue = 120 * (1 - Math.min(rate / 0.3, 1));
-        el.style.backgroundColor = `hsl(${hue}, 68%, 38%)`;
-        el.style.color = "#ffffff";
-        el.style.borderColor = `hsl(${hue}, 80%, 55%)`;
-        el.title = `Key: '${key}' | ${Math.round(rate * 100)}% errors (${misses} misses in ${attempts} attempts)`;
+    const minRequired = MIN_HEAT;
+
+    if (heatmapMetric === "error") {
+        if (attempts < minRequired) {
+            el.classList.add("nodata");
+            el.title = `Key: '${key}' | ${attempts} attempts (${misses} misses)\nNeeds at least ${minRequired} attempts for calibration.`;
+        } else {
+            const rawRate = misses / attempts;
+            // 0% error = Hue 120 (emerald green), 30%+ error = Hue 0 (crimson red)
+            const hue = 120 * (1 - Math.min(rawRate / 0.30, 1));
+            el.style.backgroundColor = `hsl(${hue}, 68%, 38%)`;
+            el.style.color = "#ffffff";
+            el.style.borderColor = `hsl(${hue}, 80%, 55%)`;
+            el.title = `Key: '${key}' | ${Math.round(rawRate * 100)}% error rate (${misses} misses in ${attempts} attempts)`;
+        }
+    } else if (heatmapMetric === "latency") {
+        if (latencyCount < minRequired) {
+            el.classList.add("nodata");
+            el.title = `Key: '${key}' | ${latencyCount} samples\nNeeds at least ${minRequired} samples to evaluate speed.`;
+        } else {
+            const avgMs = totalLatencyMs / latencyCount;
+            // Fast (<160ms = Green/Cyan Hue 140) down to Slow (>380ms = Rose/Red Hue 0)
+            const clamped = Math.max(140, Math.min(avgMs, 380));
+            const hue = 140 * (1 - (clamped - 140) / (380 - 140));
+            el.style.backgroundColor = `hsl(${hue}, 70%, 36%)`;
+            el.style.color = "#ffffff";
+            el.style.borderColor = `hsl(${hue}, 80%, 55%)`;
+            el.title = `Key: '${key}' | ${Math.round(avgMs)} ms average latency (${latencyCount} correct keypresses)`;
+        }
+    } else if (heatmapMetric === "recovery") {
+        if (recoveryCount < 2) {
+            el.classList.add("nodata");
+            el.title = `Key: '${key}' | ${recoveryCount} mistake samples\nNeeds more mistake occurrences to measure recovery delay.`;
+        } else {
+            const avgPenalty = recoveryPenaltyMs / recoveryCount;
+            // Low penalty (<100ms = Green Hue 120) to High penalty (>400ms = Red Hue 0)
+            const clamped = Math.max(80, Math.min(avgPenalty, 400));
+            const hue = 120 * (1 - (clamped - 80) / (400 - 80));
+            el.style.backgroundColor = `hsl(${hue}, 70%, 36%)`;
+            el.style.color = "#ffffff";
+            el.style.borderColor = `hsl(${hue}, 80%, 55%)`;
+            el.title = `Key: '${key}' | +${Math.round(avgPenalty)} ms hesitation delay after mistakes (${recoveryCount} typos)`;
+        }
     }
+
     return el;
 }
 
 function drawKeyboard() {
-    const saved = loadStats();
-    keyboardBox.innerHTML = "";
+    const savedStats = loadStats();
+    const savedLatency = loadLatency();
+    const savedRecoveryByKey = loadRecoveryByKey();
 
-    for (let r = 0; r < KEY_ROWS.length; r++) {
+    keyboardBox.innerHTML = "";
+    const activeLayoutRows = LAYOUTS[currentLayout] || LAYOUTS.qwerty;
+
+    for (let r = 0; r < activeLayoutRows.length; r++) {
         const row = document.createElement("div");
         row.className = "kb-row";
         row.style.marginLeft = `${r * 18}px`;
 
-        for (let c = 0; c < KEY_ROWS[r].length; c++) {
-            row.appendChild(makeKeyElement(KEY_ROWS[r][c], saved));
+        for (let c = 0; c < activeLayoutRows[r].length; c++) {
+            row.appendChild(makeKeyElement(activeLayoutRows[r][c], savedStats, savedLatency, savedRecoveryByKey));
         }
         keyboardBox.appendChild(row);
     }
@@ -514,31 +809,69 @@ function drawKeyboard() {
     const spaceRow = document.createElement("div");
     spaceRow.className = "kb-row";
     spaceRow.style.marginLeft = "105px";
-    const spaceKey = makeKeyElement(" ", saved);
+    const spaceKey = makeKeyElement(" ", savedStats, savedLatency, savedRecoveryByKey);
     spaceKey.classList.add("space");
     spaceRow.appendChild(spaceKey);
     keyboardBox.appendChild(spaceRow);
 }
 
+function updateHeatmapControls() {
+    [heatModeErrorBtn, heatModeLatencyBtn, heatModeRecoveryBtn].forEach(b => {
+        if (b) b.classList.remove("active");
+    });
+
+    if (heatmapMetric === "error" && heatModeErrorBtn) {
+        heatModeErrorBtn.classList.add("active");
+        if (heatmapDescNote) heatmapDescNote.textContent = "Live error rate heatmap based on Bayesian-smoothed keystroke accuracy";
+        if (heatmapDynamicLegend) {
+            heatmapDynamicLegend.innerHTML = `
+                <div class="legend-item"><span class="legend-chip chip-good"></span> Clean (0% error)</div>
+                <div class="legend-item"><span class="legend-chip chip-mid"></span> Moderate error</div>
+                <div class="legend-item"><span class="legend-chip chip-bad"></span> High error rate</div>
+                <div class="legend-item"><span class="legend-chip chip-none"></span> Not enough data (&lt; ${MIN_HEAT} attempts)</div>
+            `;
+        }
+    } else if (heatmapMetric === "latency" && heatModeLatencyBtn) {
+        heatModeLatencyBtn.classList.add("active");
+        if (heatmapDescNote) heatmapDescNote.textContent = "Keystroke velocity heatmap (time between keystrokes on correct presses)";
+        if (heatmapDynamicLegend) {
+            heatmapDynamicLegend.innerHTML = `
+                <div class="legend-item"><span class="legend-chip chip-good"></span> Fast (&lt; 160 ms)</div>
+                <div class="legend-item"><span class="legend-chip chip-mid"></span> Average (~250 ms)</div>
+                <div class="legend-item"><span class="legend-chip chip-bad"></span> Slow (&gt; 380 ms)</div>
+                <div class="legend-item"><span class="legend-chip chip-none"></span> Not enough data (&lt; ${MIN_HEAT} samples)</div>
+            `;
+        }
+    } else if (heatmapMetric === "recovery" && heatModeRecoveryBtn) {
+        heatModeRecoveryBtn.classList.add("active");
+        if (heatmapDescNote) heatmapDescNote.textContent = "Post-error recovery hesitation delay caused when this key is mistyped";
+        if (heatmapDynamicLegend) {
+            heatmapDynamicLegend.innerHTML = `
+                <div class="legend-item"><span class="legend-chip chip-good"></span> Fast recovery (&lt; 100 ms lost)</div>
+                <div class="legend-item"><span class="legend-chip chip-mid"></span> Moderate delay (~220 ms)</div>
+                <div class="legend-item"><span class="legend-chip chip-bad"></span> Heavy hesitation (&gt; 380 ms lost)</div>
+                <div class="legend-item"><span class="legend-chip chip-none"></span> No mistake data</div>
+            `;
+        }
+    }
+
+    drawKeyboard();
+}
+
 // =====================================================
-// Showing all-time stats
+// Showing All Diagnostics
 // =====================================================
 function showAllTime() {
     const saved = loadStats();
     const weak = rankWeakKeys(saved, MIN_ALL_TIME);
 
-    if (weak.length === 0) {
-        allTimeBox.innerHTML = `
-            <div style="color: var(--text-muted); padding: 6px 0;">
-                Accumulating key metrics...<br>
-                A key requires at least <strong>${MIN_ALL_TIME}</strong> attempts to qualify for all-time rankings.
-            </div>
-        `;
-    } else {
-        allTimeBox.innerHTML = renderWeakKeysHtml(weak);
-    }
+    allTimeBox.innerHTML = renderWeakKeysHtml(
+        weak,
+        `Accumulating data... Keys require at least ${MIN_ALL_TIME} attempts to qualify for all-time rankings.`
+    );
 
     showRecovery();
+    showLatencyRank();
     drawKeyboard();
 }
 
@@ -600,11 +933,7 @@ function buildPracticeText() {
 
         if (key >= "A" && key <= "Z") {
             const pool = WORDS.filter(w => w[0] === key.toLowerCase());
-            if (pool.length > 0) {
-                chosen.push(key + pickRandom(pool).slice(1));
-            } else {
-                chosen.push(key + pickRandom(WORDS));
-            }
+            chosen.push(pool.length > 0 ? (key + pickRandom(pool).slice(1)) : (key + pickRandom(WORDS)));
         } else {
             chosen.push(pickRandom(WORDS) + key + pickRandom(WORDS));
         }
@@ -627,7 +956,6 @@ function showResults(isTimedOut = false) {
     const finalSeconds = isTimedOut ? timerLimit : Math.max(0.1, elapsedSeconds);
     const minutes = Math.max(0.005, finalSeconds / 60);
 
-    // Characters typed so far divided by 5 words per minute
     const wpm = Math.max(0, Math.round((currentIndex / 5) / minutes));
     const typedWords = sentence.slice(0, currentIndex).trim().split(/\s+/).filter(Boolean).length;
     const correctPresses = totalPresses - wrongPresses;
@@ -648,7 +976,7 @@ function showResults(isTimedOut = false) {
                 </div>
             </div>
             <div style="font-size: 14px; color: var(--text-secondary); text-align: right;">
-                <div>${currentIndex} / ${sentence.length} characters typed (${typedWords} words)</div>
+                <div>${currentIndex.toLocaleString()} / ${sentence.length.toLocaleString()} characters typed (${typedWords} words)</div>
                 <div>${finalSeconds.toFixed(1)}s elapsed • ${wrongPresses} mistakes</div>
             </div>
         </div>
@@ -664,41 +992,43 @@ function showResults(isTimedOut = false) {
         arenaStatus.textContent = "Test Completed! New paragraph ready. Press Esc or click Restart to begin.";
     }
 
+    // Process diagnostics
     const roundStats = countKeys(records);
     showRoundWeakKeys(roundStats);
 
+    const recResult = measureRecovery(records);
+    const roundLatency = countLatency(records);
+
     saveStats(addStats(loadStats(), roundStats));
-    saveRecovery(addRecovery(loadRecovery(), measureRecovery(records)));
+    saveRecovery(addRecovery(loadRecovery(), recResult.totals));
+    saveRecoveryByKey(addRecoveryByKey(loadRecoveryByKey(), recResult.byKey));
+    saveLatency(addLatency(loadLatency(), roundLatency));
+
     showAllTime();
 
-    // Prepare fresh next passage automatically for subsequent test in Standard mode
     if (currentModeName === "Standard") {
         sentence = getRandomParagraph();
     }
 }
 
 // =====================================================
-// Keyboard Listener
+// Keyboard Listener (Mapping by character, not physical scancode)
 // =====================================================
 document.addEventListener("keydown", function (event) {
-    // Quick restart shortcut with Escape (loads fresh text if current test finished)
     if (event.key === "Escape") {
         event.preventDefault();
         startTest(!isTestActive);
         return;
     }
 
-    // Ignore keystrokes when typing inside the custom textarea
-    if (event.target.tagName === "TEXTAREA") {
+    if (event.target.tagName === "TEXTAREA" || event.target.tagName === "SELECT") {
         return;
     }
 
-    // Ignore browser shortcuts
     if (event.ctrlKey || event.metaKey || event.altKey) {
         return;
     }
 
-    // Ignore special non-character keys
     if (event.key.length > 1) {
         return;
     }
@@ -707,7 +1037,6 @@ document.addEventListener("keydown", function (event) {
         return;
     }
 
-    // Prevent spacebar scrolling page down
     if (event.key === " ") {
         event.preventDefault();
     }
@@ -716,13 +1045,10 @@ document.addEventListener("keydown", function (event) {
     if (startTime === null) {
         startTime = now;
         if (arenaStatus) {
-            if (timerLimit > 0) {
-                arenaStatus.textContent = `Timing active! ${timerLimit}s countdown running...`;
-            } else {
-                arenaStatus.textContent = "Untimed mode: Testing accuracy across full passage...";
-            }
+            arenaStatus.textContent = timerLimit > 0
+                ? `Timing active! ${timerLimit}s countdown running...`
+                : "Untimed mode: Testing accuracy & keystroke latency across passage...";
         }
-        // Start live ticking timer
         liveInterval = setInterval(updateLiveHud, 100);
     }
 
@@ -735,6 +1061,7 @@ document.addEventListener("keydown", function (event) {
     totalPresses++;
 
     const expected = sentence[currentIndex];
+    // Map strictly by produced character (event.key) for layout independence
     const isCorrect = event.key === expected;
 
     records.push({
@@ -745,32 +1072,206 @@ document.addEventListener("keydown", function (event) {
     });
 
     if (isCorrect) {
-        letters[currentIndex].classList.remove("current");
-        letters[currentIndex].classList.remove("wrong");
-        letters[currentIndex].classList.add("correct");
+        if (latency !== null && latency <= MAX_LATENCY) {
+            recentCorrectLatencies.push(latency);
+            if (recentCorrectLatencies.length > BASELINE_WINDOW) {
+                recentCorrectLatencies.shift();
+            }
+        }
 
         currentIndex++;
 
-        if (currentIndex < sentence.length) {
-            letters[currentIndex].classList.add("current");
-            letters[currentIndex].scrollIntoView({ block: "nearest", inline: "nearest" });
+        if (isVirtualized) {
+            // If near edge of rendered window, slide the window
+            if (currentIndex >= windowEndIndex - 15 || currentIndex <= windowStartIndex + 5) {
+                renderSlidingWindow();
+            } else {
+                updateSpanCursor();
+            }
         } else {
-            showResults(false); // Completed passage
+            const spans = textbox.querySelectorAll("span");
+            if (spans[currentIndex - 1]) {
+                spans[currentIndex - 1].className = "correct";
+            }
+            if (currentIndex < sentence.length && spans[currentIndex]) {
+                spans[currentIndex].classList.add("current");
+                spans[currentIndex].scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
+        }
+
+        if (currentIndex >= sentence.length) {
+            showResults(false);
         }
     } else {
         wrongPresses++;
-        letters[currentIndex].classList.add("wrong");
+        if (!isVirtualized) {
+            const spans = textbox.querySelectorAll("span");
+            if (spans[currentIndex]) {
+                spans[currentIndex].classList.add("wrong");
+            }
+        }
     }
 
     updateLiveHud();
 });
 
 // =====================================================
-// Interactive UI Handlers & Buttons
+// Data Export & Import Handlers (JSON with schema version)
+// =====================================================
+if (exportBtn) {
+    exportBtn.addEventListener("click", function () {
+        const backupData = {
+            schemaVersion: SCHEMA_VERSION,
+            app: "KeyGap",
+            exportedAt: new Date().toISOString(),
+            stats: loadStats(),
+            recovery: loadRecovery(),
+            recoveryByKey: loadRecoveryByKey(),
+            latency: loadLatency(),
+            layout: currentLayout
+        };
+
+        const jsonStr = JSON.stringify(backupData, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const dateStr = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `keygap-backup-${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        exportBtn.blur();
+    });
+}
+
+if (importBtn && importFileInput) {
+    importBtn.addEventListener("click", function () {
+        importFileInput.click();
+        importBtn.blur();
+    });
+
+    importFileInput.addEventListener("change", function (e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            try {
+                const parsed = JSON.parse(event.target.result);
+
+                if (!parsed || typeof parsed !== "object" || parsed.schemaVersion !== SCHEMA_VERSION) {
+                    alert("Invalid backup file: Unrecognized schema version or damaged JSON format.");
+                    return;
+                }
+
+                const mergeChoice = confirm(
+                    "KeyGap Data Import:\n\n" +
+                    "Click OK to MERGE imported statistics with your existing data.\n" +
+                    "Click Cancel to REPLACE all existing statistics with the backup file."
+                );
+
+                if (mergeChoice) {
+                    // Merge
+                    const mergedStats = addStats(loadStats(), parsed.stats || {});
+                    const mergedRecovery = addRecovery(loadRecovery(), parsed.recovery || emptyRecovery());
+                    const mergedRecoveryByKey = addRecoveryByKey(loadRecoveryByKey(), parsed.recoveryByKey || {});
+                    const mergedLatency = addLatency(loadLatency(), parsed.latency || {});
+
+                    saveStats(mergedStats);
+                    saveRecovery(mergedRecovery);
+                    saveRecoveryByKey(mergedRecoveryByKey);
+                    saveLatency(mergedLatency);
+                } else {
+                    // Replace
+                    saveStats(parsed.stats || {});
+                    saveRecovery(parsed.recovery || emptyRecovery());
+                    saveRecoveryByKey(parsed.recoveryByKey || {});
+                    saveLatency(parsed.latency || {});
+                }
+
+                if (parsed.layout && LAYOUTS[parsed.layout]) {
+                    currentLayout = parsed.layout;
+                    safeSet(LAYOUT_KEY, currentLayout);
+                    if (layoutDropdown) layoutDropdown.value = currentLayout;
+                }
+
+                showAllTime();
+                alert("Data imported successfully!");
+            } catch (err) {
+                alert("Error importing file: Could not parse JSON. " + err.message);
+            } finally {
+                importFileInput.value = "";
+            }
+        };
+        reader.readAsText(file);
+    });
+}
+
+if (resetBtn) {
+    resetBtn.addEventListener("click", function () {
+        if (confirm("Are you sure you want to permanently reset all KeyGap typing statistics? This cannot be undone.")) {
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(RECOVERY_KEY);
+            localStorage.removeItem(RECOVERY_BY_KEY);
+            localStorage.removeItem(LATENCY_KEY);
+            memoryStorage = {};
+            showAllTime();
+            startTest(false);
+        }
+        resetBtn.blur();
+    });
+}
+
+if (dismissStorageAlertBtn) {
+    dismissStorageAlertBtn.addEventListener("click", function () {
+        const alertBox = document.getElementById("storage-alert");
+        if (alertBox) alertBox.style.display = "none";
+    });
+}
+
+// =====================================================
+// Layout & Heatmap Metric Listeners
+// =====================================================
+if (layoutDropdown) {
+    layoutDropdown.value = currentLayout;
+    layoutDropdown.addEventListener("change", function () {
+        const val = layoutDropdown.value;
+        if (LAYOUTS[val]) {
+            currentLayout = val;
+            safeSet(LAYOUT_KEY, currentLayout);
+            drawKeyboard();
+        }
+    });
+}
+
+if (heatModeErrorBtn) {
+    heatModeErrorBtn.addEventListener("click", function () {
+        heatmapMetric = "error";
+        updateHeatmapControls();
+    });
+}
+
+if (heatModeLatencyBtn) {
+    heatModeLatencyBtn.addEventListener("click", function () {
+        heatmapMetric = "latency";
+        updateHeatmapControls();
+    });
+}
+
+if (heatModeRecoveryBtn) {
+    heatModeRecoveryBtn.addEventListener("click", function () {
+        heatmapMetric = "recovery";
+        updateHeatmapControls();
+    });
+}
+
+// =====================================================
+// Controls & Custom Text Handlers
 // =====================================================
 if (restartBtn) {
     restartBtn.addEventListener("click", function () {
-        // If restarting after completion, give a new passage; otherwise reset current
         startTest(!isTestActive);
         restartBtn.blur();
     });
@@ -803,7 +1304,7 @@ if (practiceBtn) {
     practiceBtn.addEventListener("click", function () {
         const text = buildPracticeText();
         if (text === null) {
-            alert("No weak keys identified yet. Complete a few test rounds first!");
+            alert(`No weak keys identified yet. Complete test rounds until keys have at least ${MIN_PRACTICE} attempts!`);
         } else {
             setSentence(text, "Weak-Key Drill");
         }
@@ -811,7 +1312,6 @@ if (practiceBtn) {
     });
 }
 
-// Mode & Timer Segmented Controls
 function setTimerMode(seconds, activeBtn) {
     timerLimit = seconds;
     segmentBtns.forEach(btn => {
@@ -822,19 +1322,10 @@ function setTimerMode(seconds, activeBtn) {
     startTest(false);
 }
 
-if (modeUntimedBtn) {
-    modeUntimedBtn.addEventListener("click", () => setTimerMode(0, modeUntimedBtn));
-}
+if (modeUntimedBtn) modeUntimedBtn.addEventListener("click", () => setTimerMode(0, modeUntimedBtn));
+if (mode60sBtn) mode60sBtn.addEventListener("click", () => setTimerMode(60, mode60sBtn));
+if (mode120sBtn) mode120sBtn.addEventListener("click", () => setTimerMode(120, mode120sBtn));
 
-if (mode60sBtn) {
-    mode60sBtn.addEventListener("click", () => setTimerMode(60, mode60sBtn));
-}
-
-if (mode120sBtn) {
-    mode120sBtn.addEventListener("click", () => setTimerMode(120, mode120sBtn));
-}
-
-// Custom text launch handlers
 function loadCustomText(targetTimerSeconds, activeSegmentBtn) {
     if (!customBox) return;
     const text = cleanText(customBox.value);
@@ -885,20 +1376,9 @@ if (customBox && charCounter) {
     });
 }
 
-if (resetBtn) {
-    resetBtn.addEventListener("click", function () {
-        if (confirm("Reset all stored typing statistics and calibration data?")) {
-            localStorage.removeItem(STORAGE_KEY);
-            localStorage.removeItem(RECOVERY_KEY);
-            showAllTime();
-            startTest(false);
-        }
-        resetBtn.blur();
-    });
-}
-
 // =====================================================
-// Initialize on page load
+// Initialization
 // =====================================================
 startTest(false);
+updateHeatmapControls();
 showAllTime();
