@@ -3,7 +3,6 @@
 // ===================================================================
 
 // ---------- Settings ----------
-const DEFAULT_SENTENCE = "the quick brown fox jumps over the lazy dog";
 const MAX_LENGTH = 300;          // longest custom text we accept
 const MIN_CUSTOM_LENGTH = 5;     // shortest custom text we accept
 const MIN_ROUND = 2;             // tries a key needs to be ranked in one round
@@ -16,6 +15,36 @@ const MIN_MISTAKES = 10;         // mistakes needed before showing recovery cost
 
 const STORAGE_KEY = "keygap-stats";
 const RECOVERY_KEY = "keygap-recovery";
+
+// ---------- Rich Paragraph Pool (Longer, non-repeating passages) ----------
+const PARAGRAPHS = [
+    "The craft of software development is not merely about writing code that machines can execute, but designing resilient architectures that other humans can comprehend, maintain, and build upon with enduring confidence.",
+    "Deep focus has become the rarest superpower of our modern digital era. When you ruthlessly eliminate external distractions, your mind enters a frictionless state of flow where complex engineering hurdles yield to crystal clarity.",
+    "Every deliberate keystroke carries intent. As velocity and rhythmic cadence align, typing ceases to be a conscious mechanical effort and evolves into a seamless conduit translating raw thought directly into the terminal.",
+    "Clean code reads like carefully edited prose. Every variable identifier, function signature, and high-level abstraction should weave an intuitive narrative that exposes its core architectural intent without requiring decipherment.",
+    "In the crucible of rapid innovation lies the patience to iterate relentlessly. Incremental, compounding daily improvements quietly outdistance sporadic bursts of chaotic brilliance across any meaningful career timeline.",
+    "Mistakes are never indicators of personal inadequacy, but rather precise diagnostic signals. By observing exactly where hesitation and micro-latencies occur, you expose the mechanical bottlenecks standing between practice and fluency.",
+    "A digital computer represents a bicycle for the human intellect. It magnifies cognitive bandwidth and creative imagination, empowering curious minds to construct global platforms and unravel mysteries once deemed utterly impenetrable.",
+    "True technical mastery requires humility before fundamentals. Just as the seasoned concert pianist studies subtle chord voicings, the disciplined typist cultivates relaxed finger placement and accuracy before pursuing blistering speed.",
+    "Under the ambient luminescence of the workstation display, abstract blueprints crystallize into interactive reality. What originates as an isolated script in an editor eventually becomes a living system depended upon by thousands.",
+    "Resilience is forged during those quiet stretches when tangible progress feels elusive. Trusting the systematic repetition of disciplined craft invariably produces breakthroughs that appear effortless to casual observers.",
+    "Software architecture resembles living thought crystallized into structure. Exceptional systems adapt gracefully to unforeseen operational demands while faithfully preserving the elegance of their underlying design."
+];
+
+let lastParagraphIndex = -1;
+
+function getRandomParagraph() {
+    let index;
+    if (PARAGRAPHS.length <= 1) {
+        index = 0;
+    } else {
+        do {
+            index = Math.floor(Math.random() * PARAGRAPHS.length);
+        } while (index === lastParagraphIndex);
+    }
+    lastParagraphIndex = index;
+    return PARAGRAPHS[index];
+}
 
 // Curated words used to build dynamic weak-key practice drills
 const WORDS = [
@@ -56,32 +85,46 @@ const hudTime = document.getElementById("hud-time");
 const hudMode = document.getElementById("hud-mode");
 const arenaStatus = document.getElementById("arena-status");
 
-// Buttons
+// Controls & Mode Buttons
 const restartBtn = document.getElementById("restart");
 const defaultBtn = document.getElementById("default-text");
 const practiceBtn = document.getElementById("practice");
+const refreshTextBtn = document.getElementById("refresh-text");
 const useCustomBtn = document.getElementById("use-custom");
 const resetBtn = document.getElementById("reset-stats");
 
+// Mode / Timer Segmented Buttons
+const modeUntimedBtn = document.getElementById("mode-untimed");
+const mode60sBtn = document.getElementById("mode-60s");
+const mode120sBtn = document.getElementById("mode-120s");
+const segmentBtns = [modeUntimedBtn, mode60sBtn, mode120sBtn];
+
 // ---------- State ----------
-let sentence = DEFAULT_SENTENCE;
+let sentence = getRandomParagraph();
 let currentModeName = "Standard";
-let letters;
-let currentIndex;
+let timerLimit = 0; // 0 = Untimed (full text accuracy check), 60 = 60s, 120 = 120s
+let letters = [];
+let currentIndex = 0;
 let startTime = null;
 let totalPresses = 0;
 let wrongPresses = 0;
 let records = [];
 let lastKeyTime = null;
 let liveInterval = null;
+let isTestActive = false;
 
 // =====================================================
 // Setting up a test
 // =====================================================
-function startTest() {
+function startTest(forceNewSentence = false) {
     if (liveInterval) {
         clearInterval(liveInterval);
         liveInterval = null;
+    }
+
+    // If forced or if previous test completed in Standard mode, load a fresh new paragraph
+    if (forceNewSentence && currentModeName === "Standard") {
+        sentence = getRandomParagraph();
     }
 
     textbox.innerHTML = "";
@@ -101,6 +144,7 @@ function startTest() {
     wrongPresses = 0;
     records = [];
     lastKeyTime = null;
+    isTestActive = true;
 
     if (letters.length > 0) {
         letters[0].classList.add("current");
@@ -109,30 +153,76 @@ function startTest() {
     // Reset HUD
     if (hudWpm) hudWpm.textContent = "0";
     if (hudAcc) hudAcc.innerHTML = "100<small>%</small>";
-    if (hudTime) hudTime.innerHTML = "0.0<small>s</small>";
-    if (hudMode) hudMode.textContent = currentModeName;
-    if (arenaStatus) arenaStatus.textContent = "Ready. Start typing to begin timing.";
+    if (hudTime) {
+        hudTime.classList.remove("time-warning");
+        if (timerLimit > 0) {
+            hudTime.innerHTML = `${timerLimit}.0<small>s</small>`;
+        } else {
+            hudTime.innerHTML = "0.0<small>s</small>";
+        }
+    }
+    updateModeDisplay();
+    if (arenaStatus) {
+        if (timerLimit > 0) {
+            arenaStatus.textContent = `Ready. Start typing to initiate the ${timerLimit}s countdown timer.`;
+        } else {
+            arenaStatus.textContent = "Untimed Mode: Type through the entire passage to evaluate your accuracy.";
+        }
+    }
+}
+
+function updateModeDisplay() {
+    if (!hudMode) return;
+    if (timerLimit === 60) {
+        hudMode.textContent = "60s Timed";
+    } else if (timerLimit === 120) {
+        hudMode.textContent = "120s Timed";
+    } else {
+        hudMode.textContent = currentModeName === "Standard" ? "Untimed" : currentModeName;
+    }
 }
 
 function setSentence(text, modeName = "Standard") {
     currentModeName = modeName;
     sentence = text;
-    startTest();
+    startTest(false);
 }
 
-// Live timer tick for real-time responsiveness
+// Live timer tick for real-time HUD responsiveness
 function updateLiveHud() {
-    if (!startTime) return;
-    const elapsedSeconds = (Date.now() - startTime) / 1000;
+    if (!startTime || !isTestActive) return;
+    const now = Date.now();
+    const elapsedSeconds = (now - startTime) / 1000;
     const minutes = elapsedSeconds / 60;
     
     // Live WPM based on characters typed so far
-    const wpm = minutes > 0.01 ? Math.max(0, Math.round((currentIndex / 5) / minutes)) : 0;
+    const wpm = minutes > 0.005 ? Math.max(0, Math.round((currentIndex / 5) / minutes)) : 0;
     const accuracy = totalPresses > 0 ? Math.round(((totalPresses - wrongPresses) / totalPresses) * 100) : 100;
 
     if (hudWpm) hudWpm.textContent = wpm;
     if (hudAcc) hudAcc.innerHTML = `${accuracy}<small>%</small>`;
-    if (hudTime) hudTime.innerHTML = `${elapsedSeconds.toFixed(1)}<small>s</small>`;
+
+    if (timerLimit > 0) {
+        const remaining = Math.max(0, timerLimit - elapsedSeconds);
+        if (hudTime) {
+            hudTime.innerHTML = `${remaining.toFixed(1)}<small>s</small>`;
+            if (remaining <= 10) {
+                hudTime.classList.add("time-warning");
+            } else {
+                hudTime.classList.remove("time-warning");
+            }
+        }
+
+        // Time up check
+        if (remaining <= 0) {
+            showResults(true); // Timed out
+            return;
+        }
+    } else {
+        if (hudTime) {
+            hudTime.innerHTML = `${elapsedSeconds.toFixed(1)}<small>s</small>`;
+        }
+    }
 }
 
 // =====================================================
@@ -528,36 +618,53 @@ function buildPracticeText() {
 // =====================================================
 // Finishing a test
 // =====================================================
-function showResults() {
+function showResults(isTimedOut = false) {
+    isTestActive = false;
     if (liveInterval) {
         clearInterval(liveInterval);
         liveInterval = null;
     }
 
-    const seconds = (Date.now() - startTime) / 1000;
-    const minutes = seconds / 60;
-    const wpm = Math.max(0, Math.round((sentence.length / 5) / minutes));
-    const words = sentence.split(" ").length;
+    const elapsedSeconds = startTime ? (Date.now() - startTime) / 1000 : 0;
+    const finalSeconds = isTimedOut ? timerLimit : Math.max(0.1, elapsedSeconds);
+    const minutes = Math.max(0.005, finalSeconds / 60);
+
+    // Characters typed so far divided by 5 words per minute
+    const wpm = Math.max(0, Math.round((currentIndex / 5) / minutes));
+    const typedWords = sentence.slice(0, currentIndex).trim().split(/\s+/).filter(Boolean).length;
     const correctPresses = totalPresses - wrongPresses;
     const accuracy = totalPresses > 0 ? Math.round((correctPresses / totalPresses) * 100) : 100;
 
+    const bannerTitle = isTimedOut
+        ? `<strong style="color:var(--accent-rose); font-size: 22px;">⏱️ Time's Up! (${timerLimit}s Session)</strong>`
+        : `<strong style="color:var(--accent-emerald); font-size: 22px;">🎉 Passage Completed!</strong>`;
+
     results.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
             <div>
-                <strong style="color:var(--accent-cyan); font-size: 24px;">${wpm} WPM</strong>
-                <span style="margin: 0 10px; color: var(--border-subtle);">|</span>
-                <span style="color:var(--accent-emerald); font-weight: 700;">${accuracy}% Accuracy</span>
+                ${bannerTitle}
+                <div style="margin-top: 4px;">
+                    <span style="color:var(--accent-cyan); font-size: 26px; font-weight:800;">${wpm} WPM</span>
+                    <span style="margin: 0 10px; color: var(--border-subtle);">|</span>
+                    <span style="color:var(--accent-emerald); font-size: 20px; font-weight: 700;">${accuracy}% Accuracy</span>
+                </div>
             </div>
-            <div style="font-size: 14px; color: var(--text-secondary);">
-                <span>${words} words</span> • <span>${seconds.toFixed(1)}s elapsed</span> • <span>${wrongPresses} mistakes</span>
+            <div style="font-size: 14px; color: var(--text-secondary); text-align: right;">
+                <div>${currentIndex} / ${sentence.length} characters typed (${typedWords} words)</div>
+                <div>${finalSeconds.toFixed(1)}s elapsed • ${wrongPresses} mistakes</div>
             </div>
         </div>
     `;
 
     if (hudWpm) hudWpm.textContent = wpm;
     if (hudAcc) hudAcc.innerHTML = `${accuracy}<small>%</small>`;
-    if (hudTime) hudTime.innerHTML = `${seconds.toFixed(1)}<small>s</small>`;
-    if (arenaStatus) arenaStatus.textContent = "Test Completed! Check diagnostics below or press Esc to restart.";
+    if (hudTime) {
+        hudTime.classList.remove("time-warning");
+        hudTime.innerHTML = `${finalSeconds.toFixed(1)}<small>s</small>`;
+    }
+    if (arenaStatus) {
+        arenaStatus.textContent = "Test Completed! New paragraph ready. Press Esc or click Restart to begin.";
+    }
 
     const roundStats = countKeys(records);
     showRoundWeakKeys(roundStats);
@@ -565,16 +672,21 @@ function showResults() {
     saveStats(addStats(loadStats(), roundStats));
     saveRecovery(addRecovery(loadRecovery(), measureRecovery(records)));
     showAllTime();
+
+    // Prepare fresh next passage automatically for subsequent test in Standard mode
+    if (currentModeName === "Standard") {
+        sentence = getRandomParagraph();
+    }
 }
 
 // =====================================================
 // Keyboard Listener
 // =====================================================
 document.addEventListener("keydown", function (event) {
-    // Quick restart shortcut with Escape
+    // Quick restart shortcut with Escape (loads fresh text if current test finished)
     if (event.key === "Escape") {
         event.preventDefault();
-        startTest();
+        startTest(!isTestActive);
         return;
     }
 
@@ -593,7 +705,7 @@ document.addEventListener("keydown", function (event) {
         return;
     }
 
-    if (currentIndex >= sentence.length) {
+    if (!isTestActive || currentIndex >= sentence.length) {
         return;
     }
 
@@ -605,7 +717,13 @@ document.addEventListener("keydown", function (event) {
     const now = Date.now();
     if (startTime === null) {
         startTime = now;
-        if (arenaStatus) arenaStatus.textContent = "Test in progress...";
+        if (arenaStatus) {
+            if (timerLimit > 0) {
+                arenaStatus.textContent = `Timing active! ${timerLimit}s countdown running...`;
+            } else {
+                arenaStatus.textContent = "Untimed mode: Testing accuracy across full passage...";
+            }
+        }
         // Start live ticking timer
         liveInterval = setInterval(updateLiveHud, 100);
     }
@@ -638,7 +756,7 @@ document.addEventListener("keydown", function (event) {
         if (currentIndex < sentence.length) {
             letters[currentIndex].classList.add("current");
         } else {
-            showResults();
+            showResults(false); // Completed passage
         }
     } else {
         wrongPresses++;
@@ -653,14 +771,22 @@ document.addEventListener("keydown", function (event) {
 // =====================================================
 if (restartBtn) {
     restartBtn.addEventListener("click", function () {
-        startTest();
+        // If restarting after completion, give a new passage; otherwise reset current
+        startTest(!isTestActive);
         restartBtn.blur();
+    });
+}
+
+if (refreshTextBtn) {
+    refreshTextBtn.addEventListener("click", function () {
+        setSentence(getRandomParagraph(), "Standard");
+        refreshTextBtn.blur();
     });
 }
 
 if (defaultBtn) {
     defaultBtn.addEventListener("click", function () {
-        setSentence(DEFAULT_SENTENCE, "Standard");
+        setSentence(getRandomParagraph(), "Standard");
         defaultBtn.blur();
     });
 }
@@ -675,6 +801,29 @@ if (practiceBtn) {
         }
         practiceBtn.blur();
     });
+}
+
+// Mode & Timer Segmented Controls
+function setTimerMode(seconds, activeBtn) {
+    timerLimit = seconds;
+    segmentBtns.forEach(btn => {
+        if (btn) btn.classList.remove("active");
+    });
+    if (activeBtn) activeBtn.classList.add("active");
+    updateModeDisplay();
+    startTest(false);
+}
+
+if (modeUntimedBtn) {
+    modeUntimedBtn.addEventListener("click", () => setTimerMode(0, modeUntimedBtn));
+}
+
+if (mode60sBtn) {
+    mode60sBtn.addEventListener("click", () => setTimerMode(60, mode60sBtn));
+}
+
+if (mode120sBtn) {
+    mode120sBtn.addEventListener("click", () => setTimerMode(120, mode120sBtn));
 }
 
 if (useCustomBtn && customBox) {
@@ -707,7 +856,7 @@ if (resetBtn) {
             localStorage.removeItem(STORAGE_KEY);
             localStorage.removeItem(RECOVERY_KEY);
             showAllTime();
-            startTest();
+            startTest(false);
         }
         resetBtn.blur();
     });
@@ -716,5 +865,5 @@ if (resetBtn) {
 // =====================================================
 // Initialize on page load
 // =====================================================
-startTest();
+startTest(false);
 showAllTime();

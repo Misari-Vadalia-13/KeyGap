@@ -15,10 +15,12 @@ Most typing platforms only tell you your overall WPM. KeyGap analyzes the micro-
 
 1. **Per-Key Mistake Diagnostics**: Tracks exact attempts, misses, and error rates per key across both individual sessions and all-time career history.
 2. **Recovery Cost Analysis**: Measures hesitation latency following a typo (analyzing the latency window of keys directly succeeding a mistake vs. normal keystrokes) to calculate exact seconds lost per error.
-3. **Interactive Physical Heatmap**: Color-coded QWERTY mechanical keyboard visualization dynamically shaded from emerald green (0% errors) to crimson red (high miss rate) with per-key attempt stats.
-4. **Adaptive Practice Generator**: Automatically generates typing drills weighted with your weakest keys to systematically eliminate muscle memory blindspots.
-5. **Custom Code & Text Lab**: Test yourself on actual code snippets, formulas, or tricky prose with automatic sanitization and character counting.
-6. **Zero External Dependencies**: Fast, lightweight vanilla HTML5, CSS3, and modern JavaScript. All telemetry remains 100% private in `localStorage`.
+3. **Flexible Timer Modes**: Switch seamlessly between **Untimed Mode** (accuracy across full paragraph), **60s Timed**, and **120s Timed** countdown tests.
+4. **Dynamic Paragraph Pool**: Substantial, engaging paragraphs that automatically refresh between tests without repetitive back-to-back sentences.
+5. **Interactive Physical Heatmap**: Color-coded QWERTY mechanical keyboard visualization dynamically shaded from emerald green (0% errors) to crimson red (high miss rate) with per-key attempt stats.
+6. **Adaptive Practice Generator**: Automatically generates typing drills weighted with your weakest keys to systematically eliminate muscle memory blindspots.
+7. **Custom Code & Text Lab**: Test yourself on actual code snippets, formulas, or tricky prose with automatic sanitization and character counting.
+8. **Zero External Dependencies**: Fast, lightweight vanilla HTML5, CSS3, and modern JavaScript. All telemetry remains 100% private in `localStorage`.
 
 ---
 
@@ -49,7 +51,8 @@ Visit `http://localhost:8000` in your browser.
 | Action | Control |
 | :--- | :--- |
 | **Instant Restart** | Press <kbd>Esc</kbd> or click **Restart** |
-| **Standard Passage** | Click **Default Text** |
+| **Timer Mode** | Toggle **Untimed (Accuracy)**, **60s Timed**, or **120s Timed** |
+| **Next Paragraph** | Click **Next Passage** |
 | **Weak-Key Drill** | Click **Practice Weak Keys** |
 | **Custom Text Mode** | Paste text into textarea & click **Start With My Text** |
 | **Reset Saved Data** | Click **Reset My Stats** |

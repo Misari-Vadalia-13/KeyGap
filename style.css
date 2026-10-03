@@ -226,6 +226,83 @@ body {
   box-shadow: 0 12px 40px rgba(56, 189, 248, 0.12);
 }
 
+/* ---------- Test Mode & Timer Configuration Bar ---------- */
+.test-config-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding-bottom: 20px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.config-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.config-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.segmented-control {
+  display: inline-flex;
+  background: rgba(7, 10, 18, 0.65);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 3px;
+}
+
+.segment-btn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.segment-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.segment-btn.active {
+  color: #07090e;
+  background: var(--accent-cyan);
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.35);
+}
+
+.btn-sm {
+  font-size: 12px;
+  padding: 6px 12px;
+  gap: 6px;
+}
+
+.hud-val.time-warning {
+  color: var(--accent-rose) !important;
+  text-shadow: 0 0 10px rgba(251, 113, 133, 0.5);
+  animation: pulse-warning 0.8s infinite alternate;
+}
+
+@keyframes pulse-warning {
+  from { opacity: 0.7; }
+  to { opacity: 1; transform: scale(1.04); }
+}
+
 .arena-topbar {
   display: flex;
   justify-content: space-between;
