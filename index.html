@@ -74,6 +74,27 @@
 
         <!-- Typing Arena -->
         <section class="arena-card">
+            <!-- Mode & Timer Toggle Header -->
+            <div class="test-config-bar">
+                <div class="config-group">
+                    <span class="config-label">Mode / Timer:</span>
+                    <div class="segmented-control" role="group" aria-label="Test Timer Mode">
+                        <button type="button" class="segment-btn active" data-time="0" id="mode-untimed">Untimed (Accuracy)</button>
+                        <button type="button" class="segment-btn" data-time="60" id="mode-60s">60s Timed</button>
+                        <button type="button" class="segment-btn" data-time="120" id="mode-120s">120s Timed</button>
+                    </div>
+                </div>
+                <div class="config-group">
+                    <button id="refresh-text" class="btn btn-secondary btn-sm" title="Load a fresh random paragraph">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                        </svg>
+                        <span>Next Passage</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="arena-topbar">
                 <div class="arena-indicator">
                     <span class="status-dot"></span>
@@ -96,10 +117,17 @@
                     </svg>
                     <span>Restart</span>
                 </button>
-                <button id="default-text" class="btn btn-secondary">
-                    <span>Default Text</span>
+                <button id="default-text" class="btn btn-secondary" title="Start standard text in Untimed mode">
+                    <span>Default Text (Untimed)</span>
                 </button>
-                <button id="practice" class="btn btn-accent" title="Generate passage from your weakest keys">
+                <button id="default-60s" class="btn btn-accent" title="Start 60 second timed test on standard text">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 14 10" />
+                    </svg>
+                    <span>60s Timed Text</span>
+                </button>
+                <button id="practice" class="btn btn-secondary" title="Generate passage from your weakest keys">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon
                             points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />

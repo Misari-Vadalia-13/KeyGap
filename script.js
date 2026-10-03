@@ -87,6 +87,7 @@ const arenaStatus = document.getElementById("arena-status");
 // Controls & Mode Buttons
 const restartBtn = document.getElementById("restart");
 const defaultBtn = document.getElementById("default-text");
+const default60sBtn = document.getElementById("default-60s");
 const practiceBtn = document.getElementById("practice");
 const refreshTextBtn = document.getElementById("refresh-text");
 const useCustomBtn = document.getElementById("use-custom");
@@ -784,8 +785,17 @@ if (refreshTextBtn) {
 
 if (defaultBtn) {
     defaultBtn.addEventListener("click", function () {
+        setTimerMode(0, modeUntimedBtn);
         setSentence(getRandomParagraph(), "Standard");
         defaultBtn.blur();
+    });
+}
+
+if (default60sBtn) {
+    default60sBtn.addEventListener("click", function () {
+        setTimerMode(60, mode60sBtn);
+        setSentence(getRandomParagraph(), "60s Timed");
+        default60sBtn.blur();
     });
 }
 
