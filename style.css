@@ -580,6 +580,7 @@ kbd {
 /* ---------- Results Banner ---------- */
 .results-banner {
   empty-cells: hide;
+  scroll-margin-top: 24px;
 }
 
 .results-banner:not(:empty) {

@@ -471,6 +471,11 @@ function startTest(forceNewSentence = false) {
             ? `<span style="color:var(--accent-cyan); font-weight:700;">${titleBadge}</span> • Ready. Start typing to begin the ${timerLimit}s countdown.`
             : `<span style="color:var(--accent-cyan); font-weight:700;">${titleBadge}</span> • Untimed (~${Math.round(sentence.length / 5)} words). Type to start.`;
     }
+
+    // Smoothly scroll back to the typing arena if restarted after a completed session
+    if (textbox && typeof window !== "undefined" && window.scrollY > 200) {
+        textbox.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
 }
 
 function updateModeDisplay() {
@@ -1172,6 +1177,13 @@ function showResults(isTimedOut = false) {
         const nextP = getNextPassage();
         sentence = nextP.text;
         currentArticleTitle = nextP.title || "Wikipedia Article";
+    }
+
+    // Automatically slide smoothly to the results section so the user doesn't have to scroll manually
+    if (results) {
+        setTimeout(() => {
+            results.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 60);
     }
 }
 
